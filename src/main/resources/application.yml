@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: CommonStandardRuleBuilder
+  datasource:
+    url: ${CSR_DB_URL:jdbc:postgresql://localhost:5432/csr}
+    username: ${CSR_DB_USERNAME:postgres}
+    password: ${CSR_DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
