@@ -12,6 +12,9 @@ spring:
   flyway:
     enabled: true
 
+server:
+  port: ${CSR_SERVER_PORT:38081}
+
 management:
   endpoints:
     web:
