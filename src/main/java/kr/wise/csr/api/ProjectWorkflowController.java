@@ -2,6 +2,7 @@ package kr.wise.csr.api;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -109,6 +110,12 @@ public class ProjectWorkflowController {
         return download(file.fileName(), file.mediaType(), file.content());
     }
 
+    @GetMapping("/{projectId}/artifacts/delete-exe")
+    public ResponseEntity<byte[]> downloadDeleteExe(@PathVariable long projectId) {
+        GeneratedFile file = exeBuilder.buildDelete(project(projectId));
+        return download(file.fileName(), file.mediaType(), file.content());
+    }
+
     private ProjectSnapshot project(long projectId) {
         return snapshots.findByProjectId(projectId)
                 .orElseThrow(() -> new ProjectNotFoundException(projectId));
@@ -117,7 +124,7 @@ public class ProjectWorkflowController {
     private ResponseEntity<byte[]> download(String fileName, String mediaType, byte[] content) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.parseMediaType(mediaType));
-        headers.setContentDisposition(ContentDisposition.attachment().filename(fileName).build());
+        headers.setContentDisposition(ContentDisposition.attachment().filename(fileName, StandardCharsets.UTF_8).build());
         return ResponseEntity.ok().headers(headers).contentLength(content.length).body(content);
     }
 

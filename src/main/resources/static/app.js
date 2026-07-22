@@ -80,6 +80,7 @@ function completeImport(result, trackLabel) {
   $('#workbook-download').href = `/api/projects/${projectId}/artifacts/workbook`;
   $('#sql-download').href = `/api/projects/${projectId}/artifacts/sql`;
   $('#exe-download').href = `/api/projects/${projectId}/artifacts/exe`;
+  $('#delete-exe-download').href = `/api/projects/${projectId}/artifacts/delete-exe`;
   api(`/api/projects/${projectId}`).then(project => renderConflicts(project.conflicts)).catch(() => {});
   toast(`${trackLabel}이 완료되었습니다.`);
   $('#result-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -168,7 +169,7 @@ $('#approve-button').addEventListener('click', async () => {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approverName })
     });
     renderProject(project);
-    for (const id of ['workbook-download', 'sql-download', 'exe-download']) $(`#${id}`).classList.remove('disabled');
+    for (const id of ['workbook-download', 'sql-download', 'exe-download', 'delete-exe-download']) $(`#${id}`).classList.remove('disabled');
     $('#step-2').classList.remove('active'); $('#step-3').classList.add('active');
     button.textContent = '승인 완료';
     toast('검증과 승인이 완료됐습니다.');
