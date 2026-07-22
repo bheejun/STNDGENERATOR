@@ -5,6 +5,8 @@ import java.util.List;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -68,6 +70,14 @@ public class ProjectManagementController {
                 request.deploymentYearMonth(), request.duplicateHandling()));
     }
 
+    @PatchMapping("/{projectId}")
+    public ProjectCreationService.ProjectOverview update(@PathVariable long projectId,
+            @Valid @RequestBody UpdateProjectRequest request) {
+        return projects.update(projectId, new ProjectCreationService.UpdateProject(request.systemCode(),
+                request.systemName(), request.dbmsType(), request.dbmsPhysicalName(), request.defaultSchema(),
+                request.targetYear(), request.deploymentYearMonth()));
+    }
+
     public record CreateProjectRequest(
             @NotBlank String systemCode,
             @NotBlank String systemName,
@@ -81,4 +91,9 @@ public class ProjectManagementController {
             if (duplicateHandling == null) duplicateHandling = ProjectCreationService.DuplicateHandling.CREATE_VERSION;
         }
     }
+
+    public record UpdateProjectRequest(@NotBlank String systemCode, @NotBlank String systemName,
+            @NotBlank String dbmsType, @NotBlank String dbmsPhysicalName, @NotBlank String defaultSchema,
+            @Min(2000) @Max(9999) int targetYear,
+            @NotBlank @Pattern(regexp = "^[0-9]{6}$") String deploymentYearMonth) { }
 }

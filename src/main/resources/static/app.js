@@ -27,7 +27,7 @@ async function api(url, options) {
     try { message = (await response.json()).message || message; } catch (_) {}
     throw new Error(message);
   }
-  return response.json();
+  return response.headers.get('content-type')?.includes('application/json') ? response.json() : null;
 }
 
 function escapeHtml(value) {
@@ -79,7 +79,7 @@ function renderProjectList() {
       <td>${row.targetYear} / ${escapeHtml(row.deploymentYearMonth)}</td>
       <td><span class="project-status ${statusClass}">${statusLabels[row.status] || row.status}</span></td>
       <td>${Number(row.itemCount).toLocaleString()}건</td><td>${row.unresolvedConflictCount}건</td>
-      <td>${updated}</td><td><button type="button" class="project-open" data-project-id="${row.projectId}">열기</button></td></tr>`;
+      <td>${updated}</td><td class="row-actions"><button type="button" class="project-open" data-project-id="${row.projectId}">열기</button><button type="button" class="project-open" data-edit-project="${row.projectId}">수정</button></td></tr>`;
   }).join('') : '<tr><td colspan="8" class="project-empty">조건에 맞는 프로젝트가 없습니다.</td></tr>';
 }
 
@@ -87,11 +87,38 @@ $('#refresh-projects').addEventListener('click', loadProjects);
 $('#project-search').addEventListener('input', renderProjectList);
 $('#project-status-filter').addEventListener('change', renderProjectList);
 $('#project-list').addEventListener('click', async event => {
+  const editButton = event.target.closest('[data-edit-project]');
+  if (editButton) return openProjectEditor(Number(editButton.dataset.editProject));
   const button = event.target.closest('[data-project-id]');
   if (!button) return;
   button.disabled = true;
   try { await openProject(Number(button.dataset.projectId)); }
   catch (error) { button.disabled = false; toast(error.message, true); }
+});
+
+async function openProjectEditor(id) {
+  try {
+    const overview = projectRows.find(row => row.projectId === id);
+    const project = await api(`/api/projects/${id}`);
+    const form = $('#project-edit-fields'); form.dataset.projectId = id;
+    const values = { systemCode: overview.systemCode, systemName: overview.systemName, dbmsType: project.dbmsType,
+      dbmsPhysicalName: project.dbmsPhysicalName, defaultSchema: project.defaultSchema,
+      targetYear: overview.targetYear, deploymentYearMonth: overview.deploymentYearMonth };
+    for (const [key, value] of Object.entries(values)) form.querySelector(`[name="${key}"]`).value = value || '';
+    $('#project-edit-dialog').showModal();
+  } catch (error) { toast(error.message, true); }
+}
+
+$('#save-project').addEventListener('click', async () => {
+  const fields = $('#project-edit-fields'); const id = Number(fields.dataset.projectId);
+  const values = Object.fromEntries([...fields.querySelectorAll('[name]')].map(input => [input.name, input.value]));
+  values.targetYear = Number(values.targetYear);
+  const button = $('#save-project'); button.disabled = true;
+  try {
+    await api(`/api/projects/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) });
+    $('#project-edit-dialog').close(); await loadProjects(); toast('프로젝트 기본정보를 수정했습니다.');
+  } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; }
 });
 
 async function openProject(id) {
@@ -187,11 +214,13 @@ function renderManagedCriteria() {
   $('#criteria-list').innerHTML = pageRows.length ? pageRows.map(item => {
     const preview = Object.entries(item.values).filter(([key, value]) => key !== 'wdqId' && value).slice(0, 3)
       .map(([key, value]) => `${key}: ${value}`).join(' · ');
-    return `<tr><td><span class="criteria-type">${escapeHtml(item.dataType)}</span></td><td class="criteria-key">${escapeHtml(item.logicalKey)}</td><td class="criteria-preview">${escapeHtml(preview)}</td><td><button type="button" class="project-open" data-edit-item="${item.id}">수정</button></td></tr>`;
+    return `<tr><td><span class="criteria-type">${escapeHtml(item.dataType)}</span></td><td class="criteria-key">${escapeHtml(item.logicalKey)}</td><td class="criteria-preview">${escapeHtml(preview)}</td><td class="row-actions"><button type="button" class="project-open" data-edit-item="${item.id}">수정</button><button type="button" class="project-open danger-button" data-delete-item="${item.id}">삭제</button></td></tr>`;
   }).join('') : '<tr><td colspan="4" class="project-empty">표시할 진단기준이 없습니다.</td></tr>';
 }
 
 $('#criteria-list').addEventListener('click', event => {
+  const deleteButton = event.target.closest('[data-delete-item]');
+  if (deleteButton) return deleteCriteria(Number(deleteButton.dataset.deleteItem));
   const button = event.target.closest('[data-edit-item]');
   if (!button) return;
   editingCriteria = managedCriteria.find(item => item.id === Number(button.dataset.editItem));
@@ -204,6 +233,54 @@ $('#criteria-list').addEventListener('click', event => {
     return `<label>${escapeHtml(key)}${control}</label>`;
   }).join('');
   $('#criteria-dialog').showModal();
+});
+
+async function deleteCriteria(itemId) {
+  const item = managedCriteria.find(row => row.id === itemId);
+  if (!item || !confirm(`이 진단기준을 삭제할까요?\n${item.logicalKey}`)) return;
+  try {
+    await api(`/api/projects/${item.projectId}/criteria/${itemId}`, { method: 'DELETE' });
+    await loadManagedCriteria(); await loadProjects(); toast('진단기준을 삭제했습니다.');
+  } catch (error) { toast(error.message, true); }
+}
+
+const criteriaTemplates = {
+  EXCLUSION: ['dbmsOriginal','schemaOriginal','tableOriginal','columnOriginal','exclusionType','reason'],
+  VERIFICATION_RULE: ['ruleName','expression','qualityIndicator'],
+  CODE_RULE: ['ruleName','lookupSql','description'],
+  COLUMN_MAPPING: ['dbmsOriginal','schemaOriginal','tableOriginal','columnOriginal','ruleType','ruleName'],
+  BUSINESS_RULE: ['ruleName','dbmsOriginal','schemaOriginal','tableOriginal','columnOriginal','ruleSql','countSql','ruleKind']
+};
+
+function renderNewCriteriaFields() {
+  const keys = criteriaTemplates[$('#new-criteria-type').value] || [];
+  $('#new-criteria-fields').innerHTML = keys.map(key => `<label>${key}${/sql|expression/i.test(key) ? `<textarea data-new-key="${key}"></textarea>` : `<input data-new-key="${key}">`}</label>`).join('');
+}
+$('#new-criteria-type').addEventListener('change', renderNewCriteriaFields);
+$('#criteria-create-button').addEventListener('click', () => {
+  if (!$('#manage-project').value) return toast('프로젝트를 먼저 선택하세요.', true);
+  $('#new-criteria-key').value = ''; renderNewCriteriaFields(); $('#criteria-create-dialog').showModal();
+});
+$('#create-criteria').addEventListener('click', async () => {
+  const project = Number($('#manage-project').value); const logicalKey = $('#new-criteria-key').value.trim();
+  const values = Object.fromEntries([...document.querySelectorAll('[data-new-key]')].map(input => [input.dataset.newKey, input.value]));
+  const button = $('#create-criteria'); button.disabled = true;
+  try {
+    await api(`/api/projects/${project}/criteria`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dataType: $('#new-criteria-type').value, logicalKey, values }) });
+    $('#criteria-create-dialog').close(); await loadManagedCriteria(); await loadProjects(); toast('진단기준을 추가했습니다.');
+  } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; }
+});
+
+$('#criteria-history-button').addEventListener('click', async () => {
+  const project = Number($('#manage-project').value);
+  if (!project) return toast('프로젝트를 먼저 선택하세요.', true);
+  try {
+    const history = await api(`/api/projects/${project}/criteria/history`);
+    $('#history-list').innerHTML = history.length ? history.map(item => `<tr><td>${new Date(item.changedAt).toLocaleString('ko-KR')}</td><td>${escapeHtml(item.entityType)}</td><td>${escapeHtml(item.action)}</td><td>${escapeHtml(item.entityId)}</td></tr>`).join('') : '<tr><td colspan="4" class="project-empty">변경 이력이 없습니다.</td></tr>';
+    $('#history-dialog').showModal();
+  } catch (error) { toast(error.message, true); }
 });
 
 $('#save-criteria').addEventListener('click', async () => {
