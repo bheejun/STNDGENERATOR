@@ -23,6 +23,8 @@ class WdqIdAllocatorTest {
 
     @BeforeEach
     void setUp() {
+        jdbc.update("delete from normalized_item");
+        jdbc.update("delete from data_conflict");
         jdbc.update("delete from source_file");
         jdbc.update("delete from id_registry");
         jdbc.update("delete from id_sequence");

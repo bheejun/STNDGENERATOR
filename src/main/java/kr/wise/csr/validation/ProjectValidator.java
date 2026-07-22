@@ -5,10 +5,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import org.springframework.stereotype.Component;
 
 import kr.wise.csr.normalization.NormalizedRow;
 import kr.wise.csr.project.ProjectSnapshot;
 
+@Component
 public class ProjectValidator {
     public ValidationReport validate(ProjectSnapshot project) {
         List<ValidationIssue> issues = new ArrayList<>();

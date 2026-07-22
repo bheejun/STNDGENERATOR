@@ -46,7 +46,7 @@ public class NormalizationService {
         return new NormalizationSummary(projectId, List.copyOf(rows.values()), List.copyOf(conflicts), pt01, pt02, List.copyOf(errors));
     }
 
-    static String fingerprint(Map<String, String> values) {
+    public static String fingerprint(Map<String, String> values) {
         String canonical = values.entrySet().stream().sorted(Map.Entry.comparingByKey())
                 .map(e -> e.getKey() + "=" + normalizeValue(e.getValue())).reduce("", (a,b) -> a + "\n" + b);
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8))); }
