@@ -38,6 +38,7 @@
             <label>시스템 코드<input name="systemCode" required placeholder="예: POSTMOA_JINJU"></label>
             <label>대상 연도<input class="target-year" name="targetYear" type="number" min="2000" max="9999" required></label>
             <label>배포 연월<input class="deployment-month" name="deploymentYearMonth" pattern="[0-9]{6}" required placeholder="YYYYMM"></label>
+            <label>중복 처리<select name="duplicateHandling"><option value="CREATE_VERSION">기존 프로젝트의 새 버전</option><option value="CREATE_SEPARATE">별도 프로젝트로 생성</option></select></label>
           </div>
           <label class="dropzone compact">
             <input id="report-file" name="file" type="file" accept=".xlsx,.xls" required>
@@ -63,6 +64,7 @@
             <label>기본 스키마<input name="defaultSchema" required></label>
             <label>대상 연도<input class="target-year" name="targetYear" type="number" min="2000" max="9999" required></label>
             <label>배포 연월<input class="deployment-month" name="deploymentYearMonth" pattern="[0-9]{6}" required placeholder="YYYYMM"></label>
+            <label>중복 처리<select name="duplicateHandling"><option value="CREATE_VERSION">기존 프로젝트의 새 버전</option><option value="CREATE_SEPARATE">별도 프로젝트로 생성</option></select></label>
           </div>
           <label class="dropzone compact">
             <input id="criteria-files" name="files" type="file" accept=".xlsx,.xls" multiple required>

@@ -35,8 +35,9 @@ public class ProjectManagementController {
             @RequestParam @NotBlank String systemCode,
             @RequestParam @Min(2000) @Max(9999) int targetYear,
             @RequestParam @NotBlank @Pattern(regexp = "^[0-9]{6}$") String deploymentYearMonth,
+            @RequestParam(defaultValue = "CREATE_VERSION") ProjectCreationService.DuplicateHandling duplicateHandling,
             @RequestPart("file") MultipartFile file) {
-        return bootstrap.createFromResultReport(systemCode, targetYear, deploymentYearMonth, file);
+        return bootstrap.createFromResultReport(systemCode, targetYear, deploymentYearMonth, duplicateHandling, file);
     }
 
     @PostMapping(value = "/from-criteria", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -48,9 +49,10 @@ public class ProjectManagementController {
             @RequestParam @NotBlank String defaultSchema,
             @RequestParam @Min(2000) @Max(9999) int targetYear,
             @RequestParam @NotBlank @Pattern(regexp = "^[0-9]{6}$") String deploymentYearMonth,
+            @RequestParam(defaultValue = "CREATE_VERSION") ProjectCreationService.DuplicateHandling duplicateHandling,
             @RequestPart("files") List<MultipartFile> files) {
         return bootstrap.createFromCriteria(new ProjectCreationService.CreateProject(systemCode, systemName,
-                dbmsType, dbmsPhysicalName, defaultSchema, targetYear, deploymentYearMonth), files);
+                dbmsType, dbmsPhysicalName, defaultSchema, targetYear, deploymentYearMonth, duplicateHandling), files);
     }
 
     @PostMapping

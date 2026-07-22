@@ -69,7 +69,7 @@ function completeImport(result, trackLabel) {
   projectId = result.project.projectId;
   const metadata = result.metadata;
   $('#metadata').innerHTML = [
-    ['입력 경로', trackLabel], ['프로젝트', `#${projectId}`],
+    ['입력 경로', trackLabel], ['프로젝트', `#${projectId} · ${result.project.systemCode} · v${result.project.revision}`],
     ['시스템', metadata?.systemName || '직접 입력'], ['WISE DQ', metadata?.reportVersion ? `V${metadata.reportVersion}` : '9.0~9.2']
   ].map(([label, value]) => `<div><small>${label}</small><strong>${escapeHtml(value)}</strong></div>`).join('');
   renderImportSummary(result.importResult);

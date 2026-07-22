@@ -25,11 +25,11 @@ public class ProjectBootstrapService {
 
     @Transactional
     public BootstrappedProject createFromResultReport(String systemCode, int targetYear, String deploymentYearMonth,
-            MultipartFile report) {
+            ProjectCreationService.DuplicateHandling duplicateHandling, MultipartFile report) {
         WisedqReportMetadata metadata = metadataExtractor.extract(report);
         ProjectCreationService.CreatedProject project = projects.create(new ProjectCreationService.CreateProject(
                 systemCode, metadata.systemName(), metadata.dbmsType(), metadata.dbmsName(), metadata.schemaName(),
-                targetYear, deploymentYearMonth));
+                targetYear, deploymentYearMonth, duplicateHandling));
         ProjectImportService.ImportResult imported = imports.importFiles(project.projectId(), List.of(report));
         return new BootstrappedProject(project, metadata, imported);
     }
