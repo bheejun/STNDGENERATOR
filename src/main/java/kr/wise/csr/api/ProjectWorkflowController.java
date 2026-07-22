@@ -15,7 +15,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -23,6 +25,7 @@ import kr.wise.csr.approval.ApprovalService;
 import kr.wise.csr.export.DatasetSqlExporter;
 import kr.wise.csr.export.GeneratedFile;
 import kr.wise.csr.export.StandardWorkbookExporter;
+import kr.wise.csr.importfile.ProjectImportService;
 import kr.wise.csr.project.ProjectSnapshot;
 import kr.wise.csr.project.ProjectSnapshotRepository;
 import kr.wise.csr.validation.ProjectValidator;
@@ -36,14 +39,23 @@ public class ProjectWorkflowController {
     private final ApprovalService approvals;
     private final StandardWorkbookExporter workbookExporter;
     private final DatasetSqlExporter sqlExporter;
+    private final ProjectImportService imports;
 
     public ProjectWorkflowController(ProjectSnapshotRepository snapshots, ProjectValidator validator,
-            ApprovalService approvals, StandardWorkbookExporter workbookExporter, DatasetSqlExporter sqlExporter) {
+            ApprovalService approvals, StandardWorkbookExporter workbookExporter, DatasetSqlExporter sqlExporter,
+            ProjectImportService imports) {
         this.snapshots = snapshots;
         this.validator = validator;
         this.approvals = approvals;
         this.workbookExporter = workbookExporter;
         this.sqlExporter = sqlExporter;
+        this.imports = imports;
+    }
+
+    @PostMapping(value = "/{projectId}/imports", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ProjectImportService.ImportResult importFiles(@PathVariable long projectId,
+            @RequestPart("files") List<MultipartFile> files) {
+        return imports.importFiles(projectId, files);
     }
 
     @GetMapping("/{projectId}")

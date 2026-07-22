@@ -51,6 +51,13 @@ public class WisedqResultWorkbookParser implements WorkbookParser {
                     }
                 } catch (RuntimeException e) { errors.add(e.getMessage()); }
             }
+            var referenceSheet = workbook.getSheet("(룰설정)참조무결성");
+            if (referenceSheet != null) {
+                try {
+                    pt01 += reader.rows(referenceSheet, "DBMS명", "스키마명", "테이블명", "컬럼명",
+                            "참조컬럼명", "참조테이블명").size();
+                } catch (RuntimeException e) { errors.add(e.getMessage()); }
+            }
         } catch (Exception e) {
             errors.add("결과보고서 파싱 실패: " + e.getMessage());
         }
@@ -75,7 +82,9 @@ public class WisedqResultWorkbookParser implements WorkbookParser {
         return candidate("COLUMN_MAPPING",key(v,"dbmsNormalized","schemaNormalized","tableNormalized","columnNormalized","ruleType"),v,"(룰설정)도메인",r.rowNumber());
     }
     private ImportCandidate business(CellReader.SourceRow r) {
-        Map<String,String> v=physical(r); v.put("ruleName",r.get("업무규칙명")); v.put("ruleKind","BUSINESS"); v.put("ruleSql",r.first("분석SQL","ANA_SQL","업무규칙SQL"));
+        Map<String,String> v=physical(r); v.put("ruleName",r.get("업무규칙명")); v.put("ruleKind","BUSINESS");
+        v.put("countSql",r.first("대상전체건수SQL","건수SQL","CNT_SQL"));
+        v.put("ruleSql",r.first("오류데이터추출SQL","분석SQL","ANA_SQL","업무규칙SQL"));
         return candidate("BUSINESS_RULE",key(v,"tableNormalized","ruleName"),v,"(룰설정)업무규칙",r.rowNumber());
     }
     private Map<String,String> physical(CellReader.SourceRow r) {

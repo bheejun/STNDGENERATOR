@@ -80,7 +80,7 @@ public final class CellReader {
     }
 
     public static String key(String value) {
-        return value == null ? "" : value.replaceAll("\\s+", "").trim().toUpperCase(Locale.ROOT);
+        return value == null ? "" : value.replace("(*)", "").replaceAll("\\s+", "").trim().toUpperCase(Locale.ROOT);
     }
 
     public record SourceRow(int rowNumber, Map<String, String> values) {

@@ -34,6 +34,8 @@ public class WorkbookDetector {
             Set<String> sheets = sheetNames(workbook);
             if (isResult(workbook, sheets)) return WorkbookType.WISEDQ_RESULT;
             if (isCriteria(workbook, sheets)) return WorkbookType.WDQ_CRITERIA;
+            WorkbookType splitCriteria = detectSplitCriteria(workbook);
+            if (splitCriteria != null) return splitCriteria;
 
             boolean knownSheetSet = sheets.containsAll(Set.of(RESULT_SUMMARY, RESULT_DOMAIN, RESULT_EXECUTION))
                     || sheets.containsAll(Set.of(CRITERIA_NUMBERING, CRITERIA_EXCLUSION,
@@ -45,6 +47,27 @@ public class WorkbookDetector {
         } catch (IOException | RuntimeException e) {
             throw new WorkbookDetectionException("엑셀 파일을 읽을 수 없습니다: " + path.getFileName(), e);
         }
+    }
+
+    private WorkbookType detectSplitCriteria(Workbook workbook) {
+        for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+            Sheet sheet = workbook.getSheetAt(i);
+            if (hasHeaders(sheet, "검증룰명", "검증유형", "검증룰", "품질지표명"))
+                return WorkbookType.CRITERIA_VERIFICATION_RULE;
+            if (hasHeaders(sheet, "DBMS명", "스키마명", "자식테이블명", "자식컬럼명", "부모테이블명", "부모컬럼명"))
+                return WorkbookType.CRITERIA_REFERENCE_INTEGRITY;
+            if (hasHeaders(sheet, "DBMS명", "스키마명", "테이블명", "컬럼명", "검증룰", "코드분류ID"))
+                return WorkbookType.CRITERIA_DOMAIN_MAPPING;
+            if (hasHeaders(sheet, "업무규칙명", "DBMS명", "스키마명", "테이블명", "건수SQL", "분석SQL"))
+                return WorkbookType.CRITERIA_BUSINESS_RULE;
+            if (hasHeaders(sheet, "DBMS명", "스키마명", "테이블명", "테이블한글명", "제외여부", "제외사유"))
+                return WorkbookType.CRITERIA_TABLE_EXCLUSION;
+            if (hasHeaders(sheet, "DBMS명", "스키마명", "테이블명", "컬럼명", "제외여부", "제외사유"))
+                return WorkbookType.CRITERIA_COLUMN_EXCLUSION;
+            if (hasHeaders(sheet, "DBMS명", "검증코드명", "코드유형", "코드생성SQL"))
+                return WorkbookType.CRITERIA_CODE_RULE;
+        }
+        return null;
     }
 
     private boolean isResult(Workbook workbook, Set<String> sheets) {
@@ -104,6 +127,6 @@ public class WorkbookDetector {
     }
 
     private String normalize(String value) {
-        return value.replaceAll("\\s+", "").trim().toUpperCase(Locale.ROOT);
+        return value.replace("(*)", "").replaceAll("\\s+", "").trim().toUpperCase(Locale.ROOT);
     }
 }
