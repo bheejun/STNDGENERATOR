@@ -1,6 +1,10 @@
 const $ = selector => document.querySelector(selector);
 let projectId = null;
 let projectRows = [];
+let managedCriteria = [];
+let editingCriteria = null;
+let criteriaPage = 1;
+const criteriaPageSize = 50;
 
 const today = new Date();
 for (const input of document.querySelectorAll('.target-year')) input.value = today.getFullYear();
@@ -40,10 +44,22 @@ function setLoading(button, loading, label) {
 const statusLabels = { DRAFT: '작성중', IMPORTED: '가져오기 완료', NEEDS_REVIEW: '검토 필요',
   VALIDATED: '검증 완료', APPROVED: '승인 완료', GENERATED: '생성 완료' };
 
+function showView(view) {
+  document.querySelectorAll('[data-view-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.viewPanel === view));
+  document.querySelectorAll('.main-nav [data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === view));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+document.querySelector('.main-nav').addEventListener('click', event => {
+  const button = event.target.closest('[data-view]');
+  if (button) showView(button.dataset.view);
+});
+
 async function loadProjects() {
   try {
     projectRows = await api('/api/projects');
     renderProjectList();
+    renderProjectSelectors();
   } catch (error) {
     $('#project-list').innerHTML = `<tr><td colspan="8" class="project-empty">${escapeHtml(error.message)}</td></tr>`;
   }
@@ -82,6 +98,7 @@ async function openProject(id) {
   const overview = projectRows.find(row => row.projectId === id);
   const project = await api(`/api/projects/${id}`);
   projectId = id;
+  showView('import');
   $('#metadata').innerHTML = [
     ['입력 경로', '기존 프로젝트'], ['프로젝트', `#${id} · ${overview?.systemCode || ''} · v${overview?.revision || 1}`],
     ['시스템', overview?.systemName || project.systemName], ['상태', statusLabels[project.status] || project.status]
@@ -99,6 +116,111 @@ async function openProject(id) {
   $('#step-3').classList.toggle('active', approved);
   $('#result-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+
+function renderProjectSelectors() {
+  const active = projectRows.filter(row => row.active);
+  const options = active.map(row => `<option value="${row.projectId}">${escapeHtml(row.systemName)} · ${escapeHtml(row.systemCode)} · v${row.revision} · ${statusLabels[row.status] || row.status}</option>`).join('');
+  $('#existing-project').innerHTML = options || '<option value="">등록된 프로젝트 없음</option>';
+  const previous = $('#manage-project').value;
+  $('#manage-project').innerHTML = '<option value="">프로젝트 선택</option>' + options;
+  if (active.some(row => String(row.projectId) === previous)) $('#manage-project').value = previous;
+}
+
+$('#project-register-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = event.currentTarget.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    values.targetYear = Number(values.targetYear);
+    const created = await api('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) });
+    event.currentTarget.reset();
+    for (const input of event.currentTarget.querySelectorAll('.target-year')) input.value = today.getFullYear();
+    for (const input of event.currentTarget.querySelectorAll('.deployment-month')) input.value = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}`;
+    await loadProjects(); showView('dashboard');
+    toast(`프로젝트 #${created.projectId}가 등록되었습니다.`);
+  } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; }
+});
+
+$('#existing-import-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const id = Number($('#existing-project').value);
+  if (!id) return toast('가져올 프로젝트를 선택하세요.', true);
+  const button = event.currentTarget.querySelector('button'); button.disabled = true;
+  try {
+    const form = new FormData();
+    for (const file of $('#existing-files').files) form.append('files', file);
+    await api(`/api/projects/${id}/imports`, { method: 'POST', body: form });
+    await loadProjects(); await openProject(id);
+    toast('등록 프로젝트에 진단기준을 가져왔습니다.');
+  } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; }
+});
+
+$('#manage-project').addEventListener('change', loadManagedCriteria);
+$('#criteria-type').addEventListener('change', () => { criteriaPage = 1; renderManagedCriteria(); });
+$('#criteria-search').addEventListener('input', () => { criteriaPage = 1; renderManagedCriteria(); });
+$('#criteria-prev').addEventListener('click', () => { if (criteriaPage > 1) { criteriaPage--; renderManagedCriteria(); } });
+$('#criteria-next').addEventListener('click', () => { criteriaPage++; renderManagedCriteria(); });
+
+async function loadManagedCriteria() {
+  const id = Number($('#manage-project').value);
+  if (!id) { managedCriteria = []; return renderManagedCriteria(); }
+  $('#criteria-list').innerHTML = '<tr><td colspan="4" class="project-empty">진단기준을 불러오는 중입니다.</td></tr>';
+  try { managedCriteria = await api(`/api/projects/${id}/criteria`); criteriaPage = 1; renderManagedCriteria(); }
+  catch (error) { toast(error.message, true); }
+}
+
+function renderManagedCriteria() {
+  const type = $('#criteria-type').value;
+  const keyword = $('#criteria-search').value.trim().toLowerCase();
+  const rows = managedCriteria.filter(item => (!type || item.dataType === type) && (!keyword ||
+    item.logicalKey.toLowerCase().includes(keyword) || JSON.stringify(item.values).toLowerCase().includes(keyword)));
+  const pageCount = Math.max(1, Math.ceil(rows.length / criteriaPageSize));
+  criteriaPage = Math.min(criteriaPage, pageCount);
+  const pageRows = rows.slice((criteriaPage - 1) * criteriaPageSize, criteriaPage * criteriaPageSize);
+  $('#criteria-count').textContent = `${rows.length.toLocaleString()}건`;
+  $('#criteria-page').textContent = `${criteriaPage} / ${pageCount}`;
+  $('#criteria-prev').disabled = criteriaPage <= 1;
+  $('#criteria-next').disabled = criteriaPage >= pageCount;
+  $('#criteria-list').innerHTML = pageRows.length ? pageRows.map(item => {
+    const preview = Object.entries(item.values).filter(([key, value]) => key !== 'wdqId' && value).slice(0, 3)
+      .map(([key, value]) => `${key}: ${value}`).join(' · ');
+    return `<tr><td><span class="criteria-type">${escapeHtml(item.dataType)}</span></td><td class="criteria-key">${escapeHtml(item.logicalKey)}</td><td class="criteria-preview">${escapeHtml(preview)}</td><td><button type="button" class="project-open" data-edit-item="${item.id}">수정</button></td></tr>`;
+  }).join('') : '<tr><td colspan="4" class="project-empty">표시할 진단기준이 없습니다.</td></tr>';
+}
+
+$('#criteria-list').addEventListener('click', event => {
+  const button = event.target.closest('[data-edit-item]');
+  if (!button) return;
+  editingCriteria = managedCriteria.find(item => item.id === Number(button.dataset.editItem));
+  $('#edit-criteria-key').textContent = `${editingCriteria.dataType} · ${editingCriteria.logicalKey}`;
+  $('#edit-fields').innerHTML = Object.entries(editingCriteria.values).map(([key, value]) => {
+    const readonly = key === 'wdqId';
+    const control = String(value || '').length > 100 || /sql|expression/i.test(key)
+      ? `<textarea data-value-key="${escapeHtml(key)}" ${readonly ? 'disabled' : ''}>${escapeHtml(value)}</textarea>`
+      : `<input data-value-key="${escapeHtml(key)}" value="${escapeHtml(value)}" ${readonly ? 'disabled' : ''}>`;
+    return `<label>${escapeHtml(key)}${control}</label>`;
+  }).join('');
+  $('#criteria-dialog').showModal();
+});
+
+$('#save-criteria').addEventListener('click', async () => {
+  if (!editingCriteria) return;
+  const values = { ...editingCriteria.values };
+  for (const control of document.querySelectorAll('#edit-fields [data-value-key]'))
+    if (!control.disabled) values[control.dataset.valueKey] = control.value;
+  const button = $('#save-criteria'); button.disabled = true;
+  try {
+    await api(`/api/projects/${editingCriteria.projectId}/criteria/${editingCriteria.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values })
+    });
+    $('#criteria-dialog').close(); await loadManagedCriteria(); await loadProjects();
+    toast('진단기준을 수정했습니다. 프로젝트 승인은 재검토 상태로 변경되었습니다.');
+  } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; }
+});
 
 function setArtifactLinks(id) {
   $('#workbook-download').href = `/api/projects/${id}/artifacts/workbook`;

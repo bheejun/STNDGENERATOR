@@ -65,7 +65,7 @@ public class ProjectManagementController {
     public ProjectCreationService.CreatedProject create(@Valid @RequestBody CreateProjectRequest request) {
         return projects.create(new ProjectCreationService.CreateProject(request.systemCode(), request.systemName(),
                 request.dbmsType(), request.dbmsPhysicalName(), request.defaultSchema(), request.targetYear(),
-                request.deploymentYearMonth()));
+                request.deploymentYearMonth(), request.duplicateHandling()));
     }
 
     public record CreateProjectRequest(
@@ -75,6 +75,10 @@ public class ProjectManagementController {
             @NotBlank String dbmsPhysicalName,
             @NotBlank String defaultSchema,
             @Min(2000) @Max(9999) int targetYear,
-            @NotBlank @Pattern(regexp = "^[0-9]{6}$", message = "배포년월은 YYYYMM 형식이어야 합니다") String deploymentYearMonth) {
+            @NotBlank @Pattern(regexp = "^[0-9]{6}$", message = "배포년월은 YYYYMM 형식이어야 합니다") String deploymentYearMonth,
+            ProjectCreationService.DuplicateHandling duplicateHandling) {
+        public CreateProjectRequest {
+            if (duplicateHandling == null) duplicateHandling = ProjectCreationService.DuplicateHandling.CREATE_VERSION;
+        }
     }
 }
