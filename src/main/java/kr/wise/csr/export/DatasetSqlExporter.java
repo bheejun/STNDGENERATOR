@@ -6,9 +6,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.stereotype.Component;
+
 import kr.wise.csr.normalization.NormalizedRow;
 import kr.wise.csr.project.ProjectSnapshot;
 
+@Component
 public class DatasetSqlExporter {
     private static final List<Dataset> DATASETS = List.of(
             new Dataset("SYSTEM","01-system.sql","WAA_DB_CONN_TRG", List.of("DB_CONN_TRG_ID","DB_CONN_TRG_LNM","DB_CONN_TRG_PNM"), List.of("wdqId","systemName","dbmsOriginal")),

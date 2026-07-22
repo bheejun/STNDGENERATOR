@@ -18,10 +18,12 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.stereotype.Component;
 
 import kr.wise.csr.normalization.NormalizedRow;
 import kr.wise.csr.project.ProjectSnapshot;
 
+@Component
 public class StandardWorkbookExporter {
     private static final List<SheetSpec> SHEETS=List.of(
             new SheetSpec("SYSTEM","시스템_ID",List.of("DB_CONN_TRG_ID","DB_CONN_TRG_LNM","DB_CONN_TRG_PNM","DB_SCH_PNM"),List.of("wdqId","systemName","dbmsOriginal","schemaOriginal")),
