@@ -82,6 +82,7 @@ $('#criteria-form').addEventListener('submit', async (event) => {
     $('#step-3').classList.add('active');
     $('#workbook-download').href = `/api/projects/${projectId}/artifacts/workbook`;
     $('#sql-download').href = `/api/projects/${projectId}/artifacts/sql`;
+    $('#exe-download').href = `/api/projects/${projectId}/artifacts/exe`;
     toast(`${result.files.length}개 기준 파일 분석이 끝났습니다.`);
     $('#result-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (error) { toast(error.message, true); }
@@ -174,6 +175,7 @@ $('#approve-button').addEventListener('click', async () => {
     renderProject(project);
     $('#workbook-download').classList.remove('disabled');
     $('#sql-download').classList.remove('disabled');
+    $('#exe-download').classList.remove('disabled');
     button.textContent = '승인 완료';
     toast('검증과 승인이 완료되어 파일을 내려받을 수 있습니다.');
   } catch (error) {

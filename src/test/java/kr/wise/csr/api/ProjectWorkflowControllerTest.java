@@ -19,6 +19,7 @@ import kr.wise.csr.approval.ApprovalService;
 import kr.wise.csr.export.DatasetSqlExporter;
 import kr.wise.csr.export.GeneratedFile;
 import kr.wise.csr.export.StandardWorkbookExporter;
+import kr.wise.csr.export.WdqExeBuilder;
 import kr.wise.csr.importfile.ProjectImportService;
 import kr.wise.csr.normalization.ProjectConflictService;
 import kr.wise.csr.project.ProjectSnapshot;
@@ -34,11 +35,13 @@ class ProjectWorkflowControllerTest {
     private final DatasetSqlExporter sql = mock(DatasetSqlExporter.class);
     private final ProjectImportService imports = mock(ProjectImportService.class);
     private final ProjectConflictService conflicts = mock(ProjectConflictService.class);
+    private final WdqExeBuilder exeBuilder = mock(WdqExeBuilder.class);
     private ProjectWorkflowController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new ProjectWorkflowController(snapshots, validator, approvals, workbooks, sql, imports, conflicts);
+        controller = new ProjectWorkflowController(snapshots, validator, approvals, workbooks, sql, imports, conflicts,
+                exeBuilder);
     }
 
     @Test

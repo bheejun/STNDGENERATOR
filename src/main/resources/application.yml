@@ -18,6 +18,9 @@ server:
 csr:
   storage:
     root: ${CSR_STORAGE_ROOT:./data}
+  installer:
+    inno-compiler: ${CSR_INNO_COMPILER:C:/Program Files (x86)/Inno Setup 6/ISCC.exe}
+    work-root: ${CSR_INSTALLER_WORK_ROOT:./target/installer-builds}
 
 management:
   endpoints:

@@ -26,6 +26,7 @@ import kr.wise.csr.approval.ApprovalService;
 import kr.wise.csr.export.DatasetSqlExporter;
 import kr.wise.csr.export.GeneratedFile;
 import kr.wise.csr.export.StandardWorkbookExporter;
+import kr.wise.csr.export.WdqExeBuilder;
 import kr.wise.csr.importfile.ProjectImportService;
 import kr.wise.csr.normalization.ConflictResolution;
 import kr.wise.csr.normalization.ProjectConflictService;
@@ -45,10 +46,11 @@ public class ProjectWorkflowController {
     private final DatasetSqlExporter sqlExporter;
     private final ProjectImportService imports;
     private final ProjectConflictService conflicts;
+    private final WdqExeBuilder exeBuilder;
 
     public ProjectWorkflowController(ProjectSnapshotRepository snapshots, ProjectValidator validator,
             ApprovalService approvals, StandardWorkbookExporter workbookExporter, DatasetSqlExporter sqlExporter,
-            ProjectImportService imports, ProjectConflictService conflicts) {
+            ProjectImportService imports, ProjectConflictService conflicts, WdqExeBuilder exeBuilder) {
         this.snapshots = snapshots;
         this.validator = validator;
         this.approvals = approvals;
@@ -56,6 +58,7 @@ public class ProjectWorkflowController {
         this.sqlExporter = sqlExporter;
         this.imports = imports;
         this.conflicts = conflicts;
+        this.exeBuilder = exeBuilder;
     }
 
     @PostMapping("/{projectId}/conflicts/{conflictId}/resolution")
@@ -98,6 +101,12 @@ public class ProjectWorkflowController {
         ProjectSnapshot project = project(projectId);
         List<GeneratedFile> files = sqlExporter.exportDatasetSql(project);
         return download("common-standard-rules-" + project.targetYear() + "-sql.zip", "application/zip", zip(files));
+    }
+
+    @GetMapping("/{projectId}/artifacts/exe")
+    public ResponseEntity<byte[]> downloadExe(@PathVariable long projectId) {
+        GeneratedFile file = exeBuilder.build(project(projectId));
+        return download(file.fileName(), file.mediaType(), file.content());
     }
 
     private ProjectSnapshot project(long projectId) {
