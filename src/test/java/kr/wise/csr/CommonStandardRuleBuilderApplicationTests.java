@@ -18,7 +18,7 @@ class CommonStandardRuleBuilderApplicationTests {
 
 	@Test
 	void usesTheWdqLocalServerPortByDefault() {
-		assertThat(environment.getProperty("server.port", Integer.class)).isEqualTo(38081);
+		assertThat(environment.getProperty("server.port", Integer.class)).isEqualTo(18080);
 	}
 
 }

@@ -13,7 +13,7 @@ spring:
     enabled: true
 
 server:
-  port: ${CSR_SERVER_PORT:38081}
+  port: ${CSR_SERVER_PORT:18080}
 
 csr:
   storage:
