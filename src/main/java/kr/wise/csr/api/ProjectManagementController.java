@@ -3,6 +3,7 @@ package kr.wise.csr.api;
 import java.util.List;
 
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -28,6 +29,11 @@ public class ProjectManagementController {
     public ProjectManagementController(ProjectCreationService projects, ProjectBootstrapService bootstrap) {
         this.projects = projects;
         this.bootstrap = bootstrap;
+    }
+
+    @GetMapping
+    public List<ProjectCreationService.ProjectOverview> list() {
+        return projects.list();
     }
 
     @PostMapping(value = "/from-result-report", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

@@ -14,10 +14,25 @@
   </header>
 
   <main>
-    <section class="hero">
-      <p class="eyebrow">TWO-TRACK CRITERIA EXTRACTION</p>
-      <h1>두 가지 입력,<br><em>하나의 진단기준.</em></h1>
-      <p>결과보고서에서 실제 사용한 진단기준을 추출하거나, 별도의 진단기준 엑셀 묶음을 직접 등록합니다.</p>
+    <section class="panel project-panel">
+      <div class="panel-heading project-heading">
+        <div><span class="number">현황</span><h2>프로젝트 현황관리</h2></div>
+        <button type="button" class="secondary" id="refresh-projects">새로고침</button>
+      </div>
+      <div class="project-filters">
+        <input id="project-search" placeholder="시스템명 또는 시스템 코드 검색">
+        <select id="project-status-filter">
+          <option value="">전체 상태</option><option value="DRAFT">작성중</option>
+          <option value="NEEDS_REVIEW">검토 필요</option><option value="VALIDATED">검증 완료</option>
+          <option value="APPROVED">승인 완료</option><option value="GENERATED">생성 완료</option>
+        </select>
+      </div>
+      <div class="project-table-wrap">
+        <table class="project-table">
+          <thead><tr><th>시스템</th><th>버전</th><th>대상/배포</th><th>상태</th><th>진단기준</th><th>충돌</th><th>최근 수정</th><th></th></tr></thead>
+          <tbody id="project-list"><tr><td colspan="8" class="project-empty">프로젝트를 불러오는 중입니다.</td></tr></tbody>
+        </table>
+      </div>
     </section>
 
     <ol class="steps" aria-label="진행 단계">

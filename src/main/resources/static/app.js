@@ -1,5 +1,6 @@
 const $ = selector => document.querySelector(selector);
 let projectId = null;
+let projectRows = [];
 
 const today = new Date();
 for (const input of document.querySelectorAll('.target-year')) input.value = today.getFullYear();
@@ -34,6 +35,76 @@ function escapeHtml(value) {
 function setLoading(button, loading, label) {
   button.disabled = loading;
   button.innerHTML = loading ? '추출 중입니다…' : label;
+}
+
+const statusLabels = { DRAFT: '작성중', IMPORTED: '가져오기 완료', NEEDS_REVIEW: '검토 필요',
+  VALIDATED: '검증 완료', APPROVED: '승인 완료', GENERATED: '생성 완료' };
+
+async function loadProjects() {
+  try {
+    projectRows = await api('/api/projects');
+    renderProjectList();
+  } catch (error) {
+    $('#project-list').innerHTML = `<tr><td colspan="8" class="project-empty">${escapeHtml(error.message)}</td></tr>`;
+  }
+}
+
+function renderProjectList() {
+  const keyword = $('#project-search').value.trim().toLowerCase();
+  const status = $('#project-status-filter').value;
+  const rows = projectRows.filter(row => (!status || row.status === status) && (!keyword ||
+    row.systemName.toLowerCase().includes(keyword) || row.systemCode.toLowerCase().includes(keyword)));
+  $('#project-list').innerHTML = rows.length ? rows.map(row => {
+    const statusClass = row.status === 'APPROVED' ? 'approved' : row.status === 'GENERATED' ? 'generated' :
+      row.status === 'NEEDS_REVIEW' ? 'review' : '';
+    const updated = new Date(row.updatedAt).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+    return `<tr><td class="project-system"><strong>${escapeHtml(row.systemName)}</strong><small>${escapeHtml(row.systemCode)}</small></td>
+      <td>v${row.revision}${row.active ? '' : '<span class="history-mark">이력</span>'}</td>
+      <td>${row.targetYear} / ${escapeHtml(row.deploymentYearMonth)}</td>
+      <td><span class="project-status ${statusClass}">${statusLabels[row.status] || row.status}</span></td>
+      <td>${Number(row.itemCount).toLocaleString()}건</td><td>${row.unresolvedConflictCount}건</td>
+      <td>${updated}</td><td><button type="button" class="project-open" data-project-id="${row.projectId}">열기</button></td></tr>`;
+  }).join('') : '<tr><td colspan="8" class="project-empty">조건에 맞는 프로젝트가 없습니다.</td></tr>';
+}
+
+$('#refresh-projects').addEventListener('click', loadProjects);
+$('#project-search').addEventListener('input', renderProjectList);
+$('#project-status-filter').addEventListener('change', renderProjectList);
+$('#project-list').addEventListener('click', async event => {
+  const button = event.target.closest('[data-project-id]');
+  if (!button) return;
+  button.disabled = true;
+  try { await openProject(Number(button.dataset.projectId)); }
+  catch (error) { button.disabled = false; toast(error.message, true); }
+});
+
+async function openProject(id) {
+  const overview = projectRows.find(row => row.projectId === id);
+  const project = await api(`/api/projects/${id}`);
+  projectId = id;
+  $('#metadata').innerHTML = [
+    ['입력 경로', '기존 프로젝트'], ['프로젝트', `#${id} · ${overview?.systemCode || ''} · v${overview?.revision || 1}`],
+    ['시스템', overview?.systemName || project.systemName], ['상태', statusLabels[project.status] || project.status]
+  ].map(([label, value]) => `<div><small>${label}</small><strong>${escapeHtml(value)}</strong></div>`).join('');
+  renderProject(project);
+  setArtifactLinks(id);
+  $('#result-panel').classList.remove('locked');
+  const approved = project.status === 'APPROVED' || project.status === 'GENERATED';
+  for (const id of ['workbook-download', 'sql-download', 'exe-download', 'delete-exe-download'])
+    $(`#${id}`).classList.toggle('disabled', !approved);
+  $('#approve-button').disabled = approved;
+  $('#approve-button').textContent = approved ? '승인 완료' : '검증하고 승인하기';
+  $('#step-1').classList.remove('active');
+  $('#step-2').classList.toggle('active', !approved);
+  $('#step-3').classList.toggle('active', approved);
+  $('#result-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function setArtifactLinks(id) {
+  $('#workbook-download').href = `/api/projects/${id}/artifacts/workbook`;
+  $('#sql-download').href = `/api/projects/${id}/artifacts/sql`;
+  $('#exe-download').href = `/api/projects/${id}/artifacts/exe`;
+  $('#delete-exe-download').href = `/api/projects/${id}/artifacts/delete-exe`;
 }
 
 $('#report-file').addEventListener('change', event => {
@@ -77,12 +148,10 @@ function completeImport(result, trackLabel) {
   $('#result-panel').classList.remove('locked');
   $('#step-1').classList.remove('active');
   $('#step-2').classList.add('active');
-  $('#workbook-download').href = `/api/projects/${projectId}/artifacts/workbook`;
-  $('#sql-download').href = `/api/projects/${projectId}/artifacts/sql`;
-  $('#exe-download').href = `/api/projects/${projectId}/artifacts/exe`;
-  $('#delete-exe-download').href = `/api/projects/${projectId}/artifacts/delete-exe`;
+  setArtifactLinks(projectId);
   api(`/api/projects/${projectId}`).then(project => renderConflicts(project.conflicts)).catch(() => {});
   toast(`${trackLabel}이 완료되었습니다.`);
+  loadProjects();
   $('#result-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -181,3 +250,5 @@ for (const zone of document.querySelectorAll('.dropzone')) {
   zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
   zone.addEventListener('drop', () => zone.classList.remove('drag'));
 }
+
+loadProjects();
