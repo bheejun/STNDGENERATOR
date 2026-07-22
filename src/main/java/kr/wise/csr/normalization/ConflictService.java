@@ -5,8 +5,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.stereotype.Service;
+
 import kr.wise.csr.importfile.WorkbookType;
 
+@Service
 public class ConflictService {
     public NormalizationSummary resolve(NormalizationSummary summary, ResolveConflictCommand command) {
         DataConflict target = summary.conflicts().stream().filter(c -> c.id() == command.conflictId()).findFirst()
@@ -19,8 +22,10 @@ public class ConflictService {
             if (index >= 0) rows.remove(index);
         } else if (index >= 0) {
             Map<String,String> selected = switch (command.resolution()) {
+                case USE_LEFT -> target.leftValues();
+                case USE_RIGHT -> target.rightValues();
                 case USE_WISEDQ -> target.leftSource()==WorkbookType.WISEDQ_RESULT ? target.leftValues() : target.rightValues();
-                case USE_CRITERIA -> target.leftSource()==WorkbookType.WDQ_CRITERIA ? target.leftValues() : target.rightValues();
+                case USE_CRITERIA -> isCriteria(target.leftSource()) ? target.leftValues() : target.rightValues();
                 case MANUAL -> manual(target.leftValues(), command.manualValue());
                 case EXCLUDE -> throw new IllegalStateException();
             };
@@ -30,6 +35,9 @@ public class ConflictService {
         List<DataConflict> conflicts = summary.conflicts().stream().map(c -> c.id()==target.id()
                 ? new DataConflict(c.id(),c.dataType(),c.logicalKey(),c.leftValues(),c.leftSource(),c.rightValues(),c.rightSource(),command.resolution(),command.reason()) : c).toList();
         return new NormalizationSummary(summary.projectId(),List.copyOf(rows),conflicts,summary.excludedPt01Count(),summary.excludedPt02Count(),summary.importErrors());
+    }
+    private boolean isCriteria(WorkbookType type) {
+        return type != null && (type == WorkbookType.WDQ_CRITERIA || type.name().startsWith("CRITERIA_"));
     }
     private Map<String,String> manual(Map<String,String> base,String manual) {
         if (manual==null||manual.isBlank()) throw new IllegalArgumentException("직접 입력값이 필요합니다");

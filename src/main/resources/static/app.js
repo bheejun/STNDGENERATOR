@@ -75,6 +75,8 @@ $('#criteria-form').addEventListener('submit', async (event) => {
   try {
     const result = await api(`/api/projects/${projectId}/imports`, { method: 'POST', body: new FormData(event.currentTarget) });
     renderSummary(result);
+    const project = await api(`/api/projects/${projectId}`);
+    renderConflicts(project.conflicts);
     $('#result-panel').classList.remove('locked');
     $('#step-2').classList.remove('active');
     $('#step-3').classList.add('active');
@@ -98,6 +100,57 @@ function renderSummary(result) {
     ? errors.map(error => `<div class="message">${escapeHtml(error)}</div>`).join('')
     : '<div class="message ok">파싱 오류가 없습니다.</div>';
 }
+
+function renderProject(project) {
+  renderSummary({
+    normalizedRowCount: project.rows.length,
+    conflictCount: project.conflicts.filter(conflict => !conflict.resolution).length,
+    excludedPt01Count: project.excludedPt01Count,
+    excludedPt02Count: project.excludedPt02Count,
+    errors: project.importErrors
+  });
+  renderConflicts(project.conflicts);
+}
+
+function renderConflicts(items) {
+  const unresolved = (items || []).filter(item => !item.resolution);
+  if (!unresolved.length) {
+    $('#conflicts').innerHTML = '<div class="conflict-empty">해결되지 않은 충돌이 없습니다.</div>';
+    return;
+  }
+  $('#conflicts').innerHTML = `<h3 class="conflict-title">해결이 필요한 충돌 ${unresolved.length}건</h3>` + unresolved.map(item => `
+    <article class="conflict-card" data-conflict-id="${item.id}">
+      <div class="conflict-head"><strong>${escapeHtml(item.dataType)} · ${escapeHtml(item.logicalKey)}</strong><span>미해결</span></div>
+      <div class="conflict-values">
+        <div class="conflict-value"><small>왼쪽 · ${escapeHtml(item.leftSource)}</small><pre>${escapeHtml(JSON.stringify(item.leftValues, null, 2))}</pre></div>
+        <div class="conflict-value"><small>오른쪽 · ${escapeHtml(item.rightSource)}</small><pre>${escapeHtml(JSON.stringify(item.rightValues, null, 2))}</pre></div>
+      </div>
+      <div class="conflict-buttons">
+        <button type="button" data-resolution="USE_LEFT">왼쪽 값 사용</button>
+        <button type="button" data-resolution="USE_RIGHT">오른쪽 값 사용</button>
+        <button type="button" data-resolution="EXCLUDE">이 항목 제외</button>
+      </div>
+    </article>`).join('');
+}
+
+$('#conflicts').addEventListener('click', async (event) => {
+  const button = event.target.closest('button[data-resolution]');
+  if (!button || !projectId) return;
+  const card = button.closest('[data-conflict-id]');
+  button.disabled = true;
+  try {
+    const project = await api(`/api/projects/${projectId}/conflicts/${card.dataset.conflictId}/resolution`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resolution: button.dataset.resolution, reason: '화면에서 선택' })
+    });
+    renderProject(project);
+    toast('충돌 해결 결과를 저장했습니다.');
+  } catch (error) {
+    button.disabled = false;
+    toast(error.message, true);
+  }
+});
 
 for (const zone of document.querySelectorAll('.dropzone')) {
   zone.addEventListener('dragover', event => { event.preventDefault(); zone.classList.add('drag'); });

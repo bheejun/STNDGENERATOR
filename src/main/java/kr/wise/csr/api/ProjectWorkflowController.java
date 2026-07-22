@@ -21,11 +21,15 @@ import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import kr.wise.csr.approval.ApprovalService;
 import kr.wise.csr.export.DatasetSqlExporter;
 import kr.wise.csr.export.GeneratedFile;
 import kr.wise.csr.export.StandardWorkbookExporter;
 import kr.wise.csr.importfile.ProjectImportService;
+import kr.wise.csr.normalization.ConflictResolution;
+import kr.wise.csr.normalization.ProjectConflictService;
+import kr.wise.csr.normalization.ResolveConflictCommand;
 import kr.wise.csr.project.ProjectSnapshot;
 import kr.wise.csr.project.ProjectSnapshotRepository;
 import kr.wise.csr.validation.ProjectValidator;
@@ -40,16 +44,25 @@ public class ProjectWorkflowController {
     private final StandardWorkbookExporter workbookExporter;
     private final DatasetSqlExporter sqlExporter;
     private final ProjectImportService imports;
+    private final ProjectConflictService conflicts;
 
     public ProjectWorkflowController(ProjectSnapshotRepository snapshots, ProjectValidator validator,
             ApprovalService approvals, StandardWorkbookExporter workbookExporter, DatasetSqlExporter sqlExporter,
-            ProjectImportService imports) {
+            ProjectImportService imports, ProjectConflictService conflicts) {
         this.snapshots = snapshots;
         this.validator = validator;
         this.approvals = approvals;
         this.workbookExporter = workbookExporter;
         this.sqlExporter = sqlExporter;
         this.imports = imports;
+        this.conflicts = conflicts;
+    }
+
+    @PostMapping("/{projectId}/conflicts/{conflictId}/resolution")
+    public ProjectSnapshot resolveConflict(@PathVariable long projectId, @PathVariable long conflictId,
+            @Valid @RequestBody ResolveConflictRequest request) {
+        return conflicts.resolve(projectId, new ResolveConflictCommand(conflictId, request.resolution(),
+                request.manualValue(), request.reason()));
     }
 
     @PostMapping(value = "/{projectId}/imports", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -115,5 +128,8 @@ public class ProjectWorkflowController {
     }
 
     public record ApprovalRequest(@NotBlank(message = "승인 담당자명이 필요합니다") String approverName) {
+    }
+
+    public record ResolveConflictRequest(@NotNull ConflictResolution resolution, String manualValue, String reason) {
     }
 }
