@@ -82,8 +82,6 @@ $('#criteria-form').addEventListener('submit', async (event) => {
     $('#step-3').classList.add('active');
     $('#workbook-download').href = `/api/projects/${projectId}/artifacts/workbook`;
     $('#sql-download').href = `/api/projects/${projectId}/artifacts/sql`;
-    $('#workbook-download').classList.remove('disabled');
-    $('#sql-download').classList.remove('disabled');
     toast(`${result.files.length}개 기준 파일 분석이 끝났습니다.`);
     $('#result-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (error) { toast(error.message, true); }
@@ -146,6 +144,38 @@ $('#conflicts').addEventListener('click', async (event) => {
     });
     renderProject(project);
     toast('충돌 해결 결과를 저장했습니다.');
+  } catch (error) {
+    button.disabled = false;
+    toast(error.message, true);
+  }
+});
+
+$('#approve-button').addEventListener('click', async () => {
+  if (!projectId) return;
+  const button = $('#approve-button');
+  const approverName = $('#approver-name').value.trim();
+  if (!approverName) {
+    toast('승인 담당자 이름을 입력하세요.', true);
+    return;
+  }
+  button.disabled = true;
+  try {
+    const validation = await api(`/api/projects/${projectId}/validation`, { method: 'POST' });
+    const errors = validation.issues.filter(issue => issue.severity === 'ERROR');
+    if (validation.issues.length) {
+      $('#messages').innerHTML = validation.issues.map(issue =>
+        `<div class="message${issue.severity === 'ERROR' ? '' : ' ok'}">${escapeHtml(issue.message)}${issue.logicalKey ? ` · ${escapeHtml(issue.logicalKey)}` : ''}</div>`
+      ).join('');
+    }
+    if (errors.length) throw new Error(`승인 차단 오류가 ${errors.length}건 있습니다.`);
+    const project = await api(`/api/projects/${projectId}/approval`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approverName })
+    });
+    renderProject(project);
+    $('#workbook-download').classList.remove('disabled');
+    $('#sql-download').classList.remove('disabled');
+    button.textContent = '승인 완료';
+    toast('검증과 승인이 완료되어 파일을 내려받을 수 있습니다.');
   } catch (error) {
     button.disabled = false;
     toast(error.message, true);

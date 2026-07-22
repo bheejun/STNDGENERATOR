@@ -55,8 +55,12 @@ public class ProjectValidator {
                 && (blank(row,"tableNormalized") || (row.dataType().equals("COLUMN_MAPPING") && blank(row,"columnNormalized"))))
             issues.add(error("MISSING_PHYSICAL_NAME", "테이블 또는 컬럼 물리명이 없습니다", row.logicalKey()));
         if (row.dataType().equals("COLUMN_MAPPING")) {
-            String ref = row.values().getOrDefault(row.values().getOrDefault("ruleType", "VERIFICATION").equals("CODE") ? "codeRuleId" : "verificationRuleId",
-                    row.values().getOrDefault("ruleName", ""));
+            String ref = row.values().getOrDefault("verificationRuleId", row.values().getOrDefault("ruleName", ""));
+            if (row.values().getOrDefault("ruleType", "VERIFICATION").equals("CODE")) {
+                String ruleName = row.values().getOrDefault("ruleName", "");
+                String codeRuleId = row.values().getOrDefault("codeRuleId", "");
+                ref = ruleRefs.contains(ruleName.toUpperCase(Locale.ROOT)) ? ruleName : codeRuleId;
+            }
             if (ref.isBlank() || !ruleRefs.contains(ref.toUpperCase(Locale.ROOT)))
                 issues.add(error("DANGLING_RULE_REFERENCE", "존재하지 않는 규칙 참조: " + ref, row.logicalKey()));
         }

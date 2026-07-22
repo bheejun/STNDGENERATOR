@@ -54,13 +54,20 @@ public class ProjectSnapshotRepository {
     public Optional<ProjectSnapshot> findByProjectId(long projectId) {
         List<Meta> metadata=jdbc.query("""
                 select p.id,p.system_id,p.target_year,p.deployment_year_month,p.status,s.default_schema_original,
-                  p.excluded_pt01_count,p.excluded_pt02_count,p.import_errors_json::text,p.approved_by,p.approved_at,p.approved_snapshot_hash
+                  p.excluded_pt01_count,p.excluded_pt02_count,p.import_errors_json::text,p.approved_by,p.approved_at,p.approved_snapshot_hash,
+                  s.system_name,s.dbms_physical_name,s.dbms_type,
+                  coalesce((select r.wdq_id from id_registry r where r.system_id=p.system_id and r.id_type='DB_CONNECTION' order by r.id limit 1),'')
                 from build_project p join standard_system s on s.id=p.system_id where p.id=?
-                """,(rs,n)->new Meta(rs.getLong(1),rs.getLong(2),rs.getInt(3),rs.getString(4),ProjectStatus.valueOf(rs.getString(5)),rs.getString(6),rs.getInt(7),rs.getInt(8),rs.getString(9),rs.getString(10),rs.getObject(11,OffsetDateTime.class),rs.getString(12)),projectId);
+                """,(rs,n)->new Meta(rs.getLong(1),rs.getLong(2),rs.getInt(3),rs.getString(4),
+                        ProjectStatus.valueOf(rs.getString(5)),rs.getString(6),rs.getInt(7),rs.getInt(8),
+                        rs.getString(9),rs.getString(10),rs.getObject(11,OffsetDateTime.class),rs.getString(12),
+                        rs.getString(13),rs.getString(14),rs.getString(15),rs.getString(16)),projectId);
         if(metadata.isEmpty())return Optional.empty(); Meta m=metadata.getFirst();
         List<NormalizedRow> rows=jdbc.query("select data_type,logical_key,values_json::text,sources_json::text,fingerprint from normalized_item where project_id=? order by data_type,logical_key",(rs,n)->new NormalizedRow(rs.getString(1),rs.getString(2),readMap(rs.getString(3)),readSources(rs.getString(4)),rs.getString(5).trim()),projectId);
         List<DataConflict> conflicts=jdbc.query("select id,data_type,logical_key,left_value,right_value,left_source,right_source,resolution,resolution_reason from data_conflict where project_id=? order by id",(rs,n)->new DataConflict(rs.getLong(1),rs.getString(2),rs.getString(3),readMap(rs.getString(4)),workbookType(rs.getString(6)),readMap(rs.getString(5)),workbookType(rs.getString(7)),resolution(rs.getString(8)),rs.getString(9)),projectId);
-        return Optional.of(new ProjectSnapshot(m.id,m.systemId,m.year,m.month,m.schema,m.status,rows,conflicts,m.pt01,m.pt02,readList(m.errors),m.approvedBy,m.approvedAt,m.hash));
+        return Optional.of(new ProjectSnapshot(m.id,m.systemId,m.year,m.month,m.schema,m.systemName,
+                m.dbmsPhysicalName,m.dbmsType,m.connectionWdqId,m.status,rows,conflicts,m.pt01,m.pt02,
+                readList(m.errors),m.approvedBy,m.approvedAt,m.hash));
     }
 
     @Transactional
@@ -80,5 +87,7 @@ public class ProjectSnapshotRepository {
     private String name(Enum<?> value){return value==null?null:value.name();}
     private WorkbookType workbookType(String v){return v==null?null:WorkbookType.valueOf(v);}
     private ConflictResolution resolution(String v){return v==null?null:ConflictResolution.valueOf(v);}
-    private record Meta(long id,long systemId,int year,String month,ProjectStatus status,String schema,int pt01,int pt02,String errors,String approvedBy,OffsetDateTime approvedAt,String hash){}
+    private record Meta(long id,long systemId,int year,String month,ProjectStatus status,String schema,int pt01,int pt02,
+            String errors,String approvedBy,OffsetDateTime approvedAt,String hash,String systemName,
+            String dbmsPhysicalName,String dbmsType,String connectionWdqId){}
 }

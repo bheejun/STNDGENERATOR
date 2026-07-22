@@ -25,7 +25,8 @@ class DatasetSqlExporterTest {
         List<GeneratedFile> files = new DatasetSqlExporter().exportDatasetSql(snapshot);
         assertThat(files).hasSize(6);
         String verification = text(files, "03-verification-rule.sql");
-        assertThat(verification).contains("INSERT INTO WAA_VRFC_RULE (VRFC_ID, VRFC_NM, VRFC_RULE)")
+        assertThat(verification).contains("INSERT INTO dqlite.WAA_VRFC_RULE (VRFC_ID, VRFC_TYP, VRFC_NM, VRFC_RULE")
+                .contains("OBJ_VERS, REG_TYP_CD, WRIT_DTM, WRIT_USER_ID, DQI_ID")
                 .contains("STNDRULE_0000001").doesNotContain("PT01").doesNotContain("PT02");
     }
 
