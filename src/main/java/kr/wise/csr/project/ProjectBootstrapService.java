@@ -34,6 +34,16 @@ public class ProjectBootstrapService {
         return new BootstrappedProject(project, metadata, imported);
     }
 
+    @Transactional
+    public BootstrappedProject createFromCriteria(ProjectCreationService.CreateProject command,
+            List<MultipartFile> criteriaFiles) {
+        ProjectCreationService.CreatedProject project = projects.create(command);
+        ProjectImportService.ImportResult imported = imports.importFiles(project.projectId(), criteriaFiles);
+        if (imported.inputTrack() != ProjectImportService.InputTrack.CRITERIA_FILES)
+            throw new IllegalArgumentException("진단기준 경로에는 결과보고서를 포함할 수 없습니다");
+        return new BootstrappedProject(project, null, imported);
+    }
+
     public record BootstrappedProject(ProjectCreationService.CreatedProject project,
             WisedqReportMetadata metadata, ProjectImportService.ImportResult importResult) {
     }

@@ -61,7 +61,8 @@ public class ProjectImportService {
 
         NormalizationSummary summary = normalization.normalizeAndSave(projectId, context.systemId(), batches);
         return new ImportResult(projectId, List.copyOf(imported), summary.rows().size(), summary.conflicts().size(),
-                summary.excludedPt01Count(), summary.excludedPt02Count(), summary.importErrors());
+                summary.excludedPt01Count(), summary.excludedPt02Count(), summary.importErrors(), track(batches),
+                criteriaSummary(summary));
     }
 
     private ImportBatch parse(Path path, ProjectContext context, WorkbookType type) {
@@ -88,11 +89,40 @@ public class ProjectImportService {
             throw new IllegalArgumentException("엑셀 파일만 업로드할 수 있습니다: " + name);
     }
 
+    private InputTrack track(List<ImportBatch> batches) {
+        boolean report = batches.stream().anyMatch(batch -> batch.workbookType() == WorkbookType.WISEDQ_RESULT);
+        boolean criteria = batches.stream().anyMatch(batch -> batch.workbookType() != WorkbookType.WISEDQ_RESULT);
+        if (report && criteria) return InputTrack.COMBINED;
+        return report ? InputTrack.RESULT_REPORT : InputTrack.CRITERIA_FILES;
+    }
+
+    private CriteriaSummary criteriaSummary(NormalizationSummary summary) {
+        int verificationRules = 0, businessRules = 0, tableExclusions = 0, columnExclusions = 0, mappings = 0;
+        for (var row : summary.rows()) {
+            switch (row.dataType()) {
+                case "VERIFICATION_RULE" -> verificationRules++;
+                case "BUSINESS_RULE" -> businessRules++;
+                case "COLUMN_MAPPING" -> mappings++;
+                case "EXCLUSION" -> {
+                    if ("COL".equalsIgnoreCase(row.values().get("exclusionType"))) columnExclusions++;
+                    else tableExclusions++;
+                }
+                default -> { }
+            }
+        }
+        return new CriteriaSummary(verificationRules, businessRules, tableExclusions, columnExclusions, mappings);
+    }
+
     public record ImportedFile(long sourceFileId, String fileName, WorkbookType workbookType,
             int candidateCount, List<String> errors) {
     }
 
     public record ImportResult(long projectId, List<ImportedFile> files, int normalizedRowCount, int conflictCount,
-            int excludedPt01Count, int excludedPt02Count, List<String> errors) {
+            int excludedPt01Count, int excludedPt02Count, List<String> errors, InputTrack inputTrack,
+            CriteriaSummary criteriaSummary) {
     }
+
+    public enum InputTrack { RESULT_REPORT, CRITERIA_FILES, COMBINED }
+    public record CriteriaSummary(int verificationRuleCount, int businessRuleCount, int tableExclusionCount,
+            int columnExclusionCount, int columnMappingCount) { }
 }

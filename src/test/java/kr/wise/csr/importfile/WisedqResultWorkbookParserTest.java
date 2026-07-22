@@ -24,8 +24,10 @@ class WisedqResultWorkbookParserTest {
                     List.of("DBMS명", "스키마명", "테이블명", "상태", "의견"),
                     List.of("MAILDB", "APP", "TMP_LOG", "제외", "임시테이블"));
             sheet(wb, "(룰설정)도메인",
-                    List.of("DBMS명", "스키마명", "테이블명", "컬럼명", "검증룰명", "품질지표명", "검증룰"),
-                    List.of("MAILDB", "APP", "TB_USER", "USER_YN", "여부검증", "여부 도메인", "Y,N"));
+                    List.of("DBMS명", "스키마명", "테이블명", "컬럼명", "검증룰명", "품질지표명", "검증룰", "의견 (컬럼관련 의견)"),
+                    List.of("MAILDB", "APP", "TB_USER", "USER_YN", "여부검증", "여부 도메인", "Y,N", ""),
+                    List.of("MAILDB", "APP", "TB_USER", "NAME", "[기본]공백", "공백", "X", ""),
+                    List.of("MAILDB", "APP", "TB_USER", "BLOB_DATA", "", "", "", "[컬럼제외사유] 진단 불가 자료형"));
             sheet(wb, "(진단실행)진단항목실행정보",
                     List.of("DBMS명", "스키마명", "테이블명", "컬럼명"));
             sheet(wb, "(룰설정)업무규칙",
@@ -44,6 +46,9 @@ class WisedqResultWorkbookParserTest {
         assertThat(batch.excludedPt01Count()).isEqualTo(1);
         assertThat(batch.excludedPt02Count()).isEqualTo(1);
         assertThat(batch.candidates()).noneMatch(c -> c.values().containsValue("PT01") || c.values().containsValue("PT02"));
+        assertThat(batch.candidates()).noneMatch(c -> c.values().containsValue("[기본]공백"));
+        assertThat(batch.candidates()).anyMatch(c -> c.dataType().equals("EXCLUSION")
+                && c.values().get("exclusionType").equals("COL"));
     }
 
     private ProjectContext context() { return new ProjectContext(1, 1, 2026, "202607", "MAILDB", "APP"); }

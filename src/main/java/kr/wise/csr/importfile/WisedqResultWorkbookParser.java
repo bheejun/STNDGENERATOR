@@ -34,7 +34,10 @@ public class WisedqResultWorkbookParser implements WorkbookParser {
             try {
                 for (var row : reader.rows(workbook.getSheet("(룰설정)도메인"),
                         "DBMS명", "스키마명", "테이블명", "컬럼명", "검증룰명", "검증룰")) {
-                    if (!row.get("검증룰명").isBlank()) {
+                    String opinion = opinion(row);
+                    if (opinion.contains("[컬럼제외사유]")) {
+                        candidates.add(columnExclusion(row, opinion));
+                    } else if (!row.get("검증룰명").isBlank() && !isBasicRule(row.get("검증룰명"))) {
                         candidates.add(verification(row));
                         candidates.add(mapping(row));
                     }
@@ -70,8 +73,13 @@ public class WisedqResultWorkbookParser implements WorkbookParser {
                 "schemaNormalized", norm(c.defaultSchema())), sheet, row);
     }
     private ImportCandidate exclusion(CellReader.SourceRow r) {
-        Map<String,String> v = physical(r); v.put("exclusionType", "TBL"); v.put("reason", r.first("의견", "진단제외사유"));
+        Map<String,String> v = physical(r); v.put("exclusionType", "TBL"); v.put("reason", opinion(r));
         return candidate("EXCLUSION", key(v, "dbmsNormalized","schemaNormalized","tableNormalized","columnNormalized","exclusionType"), v, "(테이블선정)진단대상테이블", r.rowNumber());
+    }
+    private ImportCandidate columnExclusion(CellReader.SourceRow r, String reason) {
+        Map<String,String> v = physical(r); v.put("exclusionType", "COL"); v.put("reason", reason);
+        return candidate("EXCLUSION", key(v, "dbmsNormalized","schemaNormalized","tableNormalized",
+                "columnNormalized","exclusionType"), v, "(룰설정)도메인", r.rowNumber());
     }
     private ImportCandidate verification(CellReader.SourceRow r) {
         Map<String,String> v=map("ruleName",r.get("검증룰명"),"expression",r.get("검증룰"),"qualityIndicator",r.get("품질지표명"));
@@ -89,6 +97,13 @@ public class WisedqResultWorkbookParser implements WorkbookParser {
     }
     private Map<String,String> physical(CellReader.SourceRow r) {
         return map("dbmsOriginal",r.get("DBMS명"),"dbmsNormalized",norm(r.get("DBMS명")),"schemaOriginal",r.get("스키마명"),"schemaNormalized",norm(r.get("스키마명")),"tableOriginal",r.get("테이블명"),"tableNormalized",norm(r.get("테이블명")),"columnOriginal",r.get("컬럼명"),"columnNormalized",norm(r.get("컬럼명")));
+    }
+    private boolean isBasicRule(String ruleName) {
+        return ruleName != null && ruleName.stripLeading().startsWith("[기본]");
+    }
+    private String opinion(CellReader.SourceRow row) {
+        return row.values().entrySet().stream().filter(entry -> entry.getKey().contains("의견"))
+                .map(Map.Entry::getValue).filter(value -> value != null && !value.isBlank()).findFirst().orElse("");
     }
     static ImportCandidate candidate(String type,String key,Map<String,String> values,String sheet,int row) { return new ImportCandidate(type,key,Map.copyOf(values),sheet,row); }
     static LinkedHashMap<String,String> map(Object... pairs) { LinkedHashMap<String,String> m=new LinkedHashMap<>(); for(int i=0;i<pairs.length;i+=2)m.put(String.valueOf(pairs[i]),String.valueOf(pairs[i+1])); return m; }

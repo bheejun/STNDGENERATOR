@@ -1,5 +1,7 @@
 package kr.wise.csr.api;
 
+import java.util.List;
+
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -35,6 +37,20 @@ public class ProjectManagementController {
             @RequestParam @NotBlank @Pattern(regexp = "^[0-9]{6}$") String deploymentYearMonth,
             @RequestPart("file") MultipartFile file) {
         return bootstrap.createFromResultReport(systemCode, targetYear, deploymentYearMonth, file);
+    }
+
+    @PostMapping(value = "/from-criteria", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ProjectBootstrapService.BootstrappedProject createFromCriteria(
+            @RequestParam @NotBlank String systemCode,
+            @RequestParam @NotBlank String systemName,
+            @RequestParam @NotBlank String dbmsType,
+            @RequestParam @NotBlank String dbmsPhysicalName,
+            @RequestParam @NotBlank String defaultSchema,
+            @RequestParam @Min(2000) @Max(9999) int targetYear,
+            @RequestParam @NotBlank @Pattern(regexp = "^[0-9]{6}$") String deploymentYearMonth,
+            @RequestPart("files") List<MultipartFile> files) {
+        return bootstrap.createFromCriteria(new ProjectCreationService.CreateProject(systemCode, systemName,
+                dbmsType, dbmsPhysicalName, defaultSchema, targetYear, deploymentYearMonth), files);
     }
 
     @PostMapping
