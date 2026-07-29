@@ -39,6 +39,10 @@ public class ProjectConflictService {
     private NormalizationSummary assignMissingIds(NormalizationSummary summary, long systemId) {
         List<NormalizedRow> assigned = new ArrayList<>();
         for (NormalizedRow row : summary.rows()) {
+            if (row.dataType().equals("CODE_VALUE")) {
+                assigned.add(row);
+                continue;
+            }
             if (!row.values().getOrDefault("wdqId", "").isBlank()) {
                 assigned.add(row);
                 continue;

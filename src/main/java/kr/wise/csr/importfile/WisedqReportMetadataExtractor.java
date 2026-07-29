@@ -68,12 +68,18 @@ public class WisedqReportMetadataExtractor {
                 }
             }
 
+            String summarySchema = labels.getOrDefault(CellReader.key("DBMS서비스(스키마)명"), "");
+            String detailSchema = WisedqSchemaResolver.resolve(workbook);
+            String actualSchema = detailSchema.isBlank() ? summarySchema : detailSchema;
+            if (actualSchema.isBlank())
+                throw new IllegalArgumentException("결과보고서 상세 시트에서 실제 스키마명을 찾을 수 없습니다");
+
             WisedqReportMetadata metadata = new WisedqReportMetadata(
                     labels.getOrDefault(CellReader.key("기관명"), ""),
                     required(labels, "정보시스템명"),
                     required(labels, "DBMS명"),
                     required(labels, "DBMS종류"),
-                    required(labels, "DBMS서비스(스키마)명"),
+                    actualSchema,
                     labels.getOrDefault(CellReader.key("DBMS버전"), ""),
                     labels.getOrDefault(CellReader.key("IP"), ""),
                     labels.getOrDefault(CellReader.key("Port"), ""),

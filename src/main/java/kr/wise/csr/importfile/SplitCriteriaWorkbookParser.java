@@ -20,11 +20,22 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class SplitCriteriaWorkbookParser implements WorkbookParser {
+    private final DefaultVerificationRuleCatalog defaultRules;
+
+    public SplitCriteriaWorkbookParser() {
+        this.defaultRules = null;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public SplitCriteriaWorkbookParser(DefaultVerificationRuleCatalog defaultRules) {
+        this.defaultRules = defaultRules;
+    }
+
     private static final Set<WorkbookType> SUPPORTED = Set.of(
             WorkbookType.CRITERIA_VERIFICATION_RULE,
-            WorkbookType.CRITERIA_REFERENCE_INTEGRITY,
             WorkbookType.CRITERIA_DOMAIN_MAPPING,
             WorkbookType.CRITERIA_BUSINESS_RULE,
+            WorkbookType.CRITERIA_EXCLUSION_PATTERN,
             WorkbookType.CRITERIA_TABLE_EXCLUSION,
             WorkbookType.CRITERIA_COLUMN_EXCLUSION,
             WorkbookType.CRITERIA_CODE_RULE);
@@ -48,12 +59,15 @@ public class SplitCriteriaWorkbookParser implements WorkbookParser {
             Sheet sheet = workbook.getSheetAt(0);
             switch (type) {
                 case CRITERIA_VERIFICATION_RULE -> parseVerification(reader, sheet, candidates);
-                case CRITERIA_REFERENCE_INTEGRITY -> pt01 = parseReferenceIntegrity(reader, sheet);
                 case CRITERIA_DOMAIN_MAPPING -> parseDomainMapping(reader, sheet, candidates);
                 case CRITERIA_BUSINESS_RULE -> parseBusiness(reader, sheet, candidates);
+                case CRITERIA_EXCLUSION_PATTERN -> parseExclusionPatterns(reader, sheet, candidates);
                 case CRITERIA_TABLE_EXCLUSION -> parseTableExclusions(reader, sheet, candidates);
                 case CRITERIA_COLUMN_EXCLUSION -> parseColumnExclusions(reader, sheet, candidates);
-                case CRITERIA_CODE_RULE -> parseCodeRules(reader, workbook.getSheet("SQL"), candidates);
+                case CRITERIA_CODE_RULE -> {
+                    parseCodeRules(reader, workbook.getSheet("SQL"), candidates, context);
+                    parseCodeValues(reader, workbook.getSheet("DATA"), candidates, context);
+                }
                 default -> throw new IllegalArgumentException("지원하지 않는 분리형 기준 파일: " + type);
             }
         } catch (Exception e) {
@@ -73,6 +87,10 @@ public class SplitCriteriaWorkbookParser implements WorkbookParser {
                     "excludedValues", row.get("오류제외데이터"),
                     "excludedValueSeparator", row.get("오류제외데이터구분자"),
                     "description", row.get("검증룰설명"));
+            if (defaultRules != null && defaultRules.findByName(values.get("ruleName")).isPresent())
+                continue;
+            values.put("ruleOrigin", "ADDITIONAL_UPLOADED");
+            values.put("ruleOriginLabel", "추가 검증룰");
             candidates.add(candidate("VERIFICATION_RULE", key(values, "ruleName", "expression"), values,
                     sheet.getSheetName(), row.rowNumber()));
         }
@@ -88,7 +106,14 @@ public class SplitCriteriaWorkbookParser implements WorkbookParser {
             String codeId = row.get("코드분류ID");
             values.put("ruleType", codeId.isBlank() ? "VERIFICATION" : "CODE");
             values.put("ruleName", row.get("검증룰"));
-            values.put("codeRuleId", codeId);
+            if (codeId.isBlank() && defaultRules != null) {
+                defaultRules.findByName(values.get("ruleName"))
+                        .ifPresent(rule -> {
+                            values.put("verificationRuleId", rule.ruleId());
+                            values.put("ruleOrigin", "DEFAULT_CATALOG");
+                        });
+            }
+            values.put("codeClassId", codeId);
             values.put("columnLogicalName", row.get("컬럼한글명"));
             values.put("dataType", row.first("DATATYPE", "데이터타입"));
             values.put("comment", row.get("컬럼의견"));
@@ -101,6 +126,9 @@ public class SplitCriteriaWorkbookParser implements WorkbookParser {
     private void parseBusiness(CellReader reader, Sheet sheet, List<ImportCandidate> candidates) {
         for (var row : reader.rows(sheet, "업무규칙명", "DBMS명", "스키마명", "테이블명", "건수SQL", "분석SQL")) {
             Map<String, String> values = physical(row, "테이블명", "컬럼명");
+            String targetColumn = lastLine(values.get("columnOriginal"));
+            values.put("columnOriginal", targetColumn);
+            values.put("columnNormalized", norm(targetColumn));
             values.put("ruleName", row.get("업무규칙명"));
             values.put("ruleKind", "BUSINESS");
             values.put("qualityIndicator", row.get("품질지표명"));
@@ -115,14 +143,47 @@ public class SplitCriteriaWorkbookParser implements WorkbookParser {
 
     private void parseTableExclusions(CellReader reader, Sheet sheet, List<ImportCandidate> candidates) {
         for (var row : reader.rows(sheet, "DBMS명", "스키마명", "테이블명", "제외여부", "제외사유")) {
-            if (!yes(row.get("제외여부"))) continue;
             Map<String, String> values = physical(row, "테이블명", "컬럼명");
+            boolean excluded = yes(row.get("제외여부"));
             values.put("exclusionType", "TBL");
-            values.put("reason", row.get("제외사유"));
+            values.put("expYn", excluded ? "Y" : "N");
+            values.put("reason", excluded ? row.get("제외사유") : "");
             candidates.add(candidate("EXCLUSION",
                     key(values, "dbmsNormalized", "schemaNormalized", "tableNormalized", "exclusionType"),
                     values, sheet.getSheetName(), row.rowNumber()));
         }
+    }
+
+    private void parseExclusionPatterns(CellReader reader, Sheet sheet, List<ImportCandidate> candidates) {
+        for (var row : reader.rows(sheet, "DBMS명", "스키마명", "포함관계", "제외기준룰", "제외사유")) {
+            String relation = exclusionRelation(row.get("포함관계"));
+            String pattern = exclusionPattern(row.get("제외기준룰"), relation);
+            Map<String, String> values = map(
+                    "dbmsOriginal", row.get("DBMS명"),
+                    "dbmsNormalized", norm(row.get("DBMS명")),
+                    "schemaOriginal", row.get("스키마명"),
+                    "schemaNormalized", norm(row.get("스키마명")),
+                    "relation", relation,
+                    "pattern", pattern,
+                    "reason", row.get("제외사유"));
+            candidates.add(candidate("EXCLUSION_PATTERN",
+                    key(values, "dbmsNormalized", "schemaNormalized", "relation", "pattern"),
+                    values, sheet.getSheetName(), row.rowNumber()));
+        }
+    }
+
+    private String exclusionRelation(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if ("앞".equals(normalized) || "F".equalsIgnoreCase(normalized)) return "F";
+        if ("뒤".equals(normalized) || "B".equalsIgnoreCase(normalized)) return "B";
+        return normalized;
+    }
+
+    private String exclusionPattern(String value, String relation) {
+        String normalized = value == null ? "" : value.trim();
+        if ("B".equals(relation) && normalized.startsWith("_")) return normalized.substring(1);
+        if ("F".equals(relation) && normalized.endsWith("_")) return normalized.substring(0, normalized.length() - 1);
+        return normalized;
     }
 
     private void parseColumnExclusions(CellReader reader, Sheet sheet, List<ImportCandidate> candidates) {
@@ -137,18 +198,38 @@ public class SplitCriteriaWorkbookParser implements WorkbookParser {
         }
     }
 
-    private void parseCodeRules(CellReader reader, Sheet sheet, List<ImportCandidate> candidates) {
+    private void parseCodeRules(CellReader reader, Sheet sheet, List<ImportCandidate> candidates, ProjectContext context) {
         for (var row : reader.rows(sheet, "DBMS명", "검증코드명", "코드유형", "코드생성SQL")) {
+            String ruleName = prefixed(context, row.get("검증코드명"));
             Map<String, String> values = map(
                     "dbmsOriginal", row.get("DBMS명"),
                     "dbmsNormalized", norm(row.get("DBMS명")),
-                    "ruleName", row.get("검증코드명"),
+                    "ruleName", ruleName,
+                    "sourceRuleName", row.get("검증코드명"),
                     "codeType", row.get("코드유형"),
                     "lookupSql", row.get("코드생성SQL"),
-                    "description", row.get("설명"));
+                    "description", row.get("설명"),
+                    "exclusiveYn", row.get("코드생성SQL").isBlank() ? "Y" : "N");
             candidates.add(candidate("CODE_RULE", key(values, "dbmsNormalized", "ruleName"), values,
                     sheet.getSheetName(), row.rowNumber()));
         }
+    }
+
+    private void parseCodeValues(CellReader reader, Sheet sheet, List<ImportCandidate> candidates,
+            ProjectContext context) {
+        if (sheet == null) return;
+        for (var row : reader.rows(sheet, "DB명", "검증코드명", "코드", "코드명")) {
+            String ruleName = prefixed(context, row.get("검증코드명"));
+            Map<String,String> values=map("dbmsOriginal",row.get("DB명"),"dbmsNormalized",norm(row.get("DB명")),
+                    "ruleName",ruleName,"codeId",row.get("코드"),"codeName",row.get("코드명"),
+                    "description",row.get("설명"),"exclusiveYn","Y");
+            candidates.add(candidate("CODE_VALUE",key(values,"dbmsNormalized","ruleName","codeId"),values,
+                    sheet.getSheetName(),row.rowNumber()));
+        }
+    }
+
+    private String prefixed(ProjectContext context, String sourceName) {
+        return context.prefixed(sourceName);
     }
 
     private Map<String, String> physical(CellReader.SourceRow row, String tableHeader, String columnHeader) {
@@ -161,5 +242,14 @@ public class SplitCriteriaWorkbookParser implements WorkbookParser {
 
     private boolean yes(String value) {
         return "Y".equalsIgnoreCase(value) || "YES".equalsIgnoreCase(value) || "제외".equals(value);
+    }
+
+    private String lastLine(String value) {
+        if (value == null || value.isBlank()) return "";
+        String selected = "";
+        for (String line : value.split("\\R")) {
+            if (!line.isBlank()) selected = line.trim();
+        }
+        return selected;
     }
 }

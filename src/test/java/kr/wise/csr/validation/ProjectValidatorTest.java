@@ -40,6 +40,90 @@ class ProjectValidatorTest {
                 .extracting(ValidationIssue::code).contains("HARDCODED_SCHEMA", "PT_ROWS_IGNORED");
     }
 
+    @Test
+    void warnsWhenCodeDomainMappingHasNoCodeData() {
+        ProjectSnapshot snapshot = new ProjectSnapshot(1, 1, 2026, "202607", "APP", ProjectStatus.NEEDS_REVIEW,
+                List.of(
+                        row("CODE_RULE", "C", Map.of("wdqId", "STNDCD_00000001", "ruleName", "지역코드",
+                                "codeType", "공통코드", "exclusiveYn", "Y")),
+                        row("COLUMN_MAPPING", "M", Map.of("tableNormalized", "TB", "columnNormalized", "REGION_CD",
+                                "ruleType", "CODE", "ruleName", "지역코드"))),
+                List.of(), 0, 0, List.of(), null, null, null);
+
+        assertThat(validator.validate(snapshot).issues()).extracting(ValidationIssue::code)
+                .contains("MISSING_CODE_DATA");
+    }
+
+    @Test
+    void rejectsVerificationRuleNameLongerThanWdqDdlLimit() {
+        ProjectSnapshot snapshot = new ProjectSnapshot(1, 1, 2026, "202607", "APP",
+                ProjectStatus.NEEDS_REVIEW,
+                List.of(row("VERIFICATION_RULE", "too-long",
+                        Map.of("wdqId", "VRFC_70000000001", "ruleName", "가".repeat(51), "expression", "1=1"))),
+                List.of(), 0, 0, List.of(), null, null, null);
+
+        assertThat(validator.validate(snapshot).issues())
+                .anyMatch(issue -> issue.code().equals("WDQ_COLUMN_TOO_LONG")
+                        && issue.message().contains("WAA_VRFC_RULE.VRFC_NM")
+                        && issue.message().contains("현재 51자"));
+    }
+
+    @Test
+    void validatesBusinessTargetsAgainstMappedColumnsAndTableExclusions() {
+        ProjectSnapshot snapshot = new ProjectSnapshot(1, 1, 2026, "202607", "APP",
+                ProjectStatus.NEEDS_REVIEW,
+                List.of(
+                        row("COLUMN_MAPPING", "mapped", Map.of(
+                                "schemaNormalized", "APP", "tableNormalized", "MAPPED_TBL",
+                                "columnNormalized", "NORMAL_COL", "ruleType", "VERIFICATION",
+                                "verificationRuleId", "STAT_00000000001")),
+                        row("EXCLUSION", "excluded", Map.of(
+                                "schemaNormalized", "APP", "tableNormalized", "MAPPED_TBL",
+                                "columnNormalized", "EXCLUDED_COL", "exclusionType", "COL", "expYn", "Y")),
+                        row("EXCLUSION", "excluded-table", Map.of(
+                                "schemaNormalized", "APP", "tableNormalized", "BLOCKED_TBL",
+                                "exclusionType", "TBL", "expYn", "Y")),
+                        row("EXCLUSION_PATTERN", "pattern", Map.of(
+                                "schemaNormalized", "APP", "relation", "F", "pattern", "TMP_")),
+                        business("missing-table", "ONLY_BUSINESS_TBL", "TARGET_COL"),
+                        business("excluded-column", "MAPPED_TBL", "EXCLUDED_COL"),
+                        business("excluded-table", "BLOCKED_TBL", "TARGET_COL"),
+                        business("pattern-table", "TMP_HISTORY", "TARGET_COL"),
+                        business("missing-column", "MAPPED_TBL", "")),
+                List.of(), 0, 0, List.of(), null, null, null);
+
+        assertThat(validator.validate(snapshot).issues()).extracting(ValidationIssue::code)
+                .contains("BUSINESS_TARGET_TABLE_NOT_DIAGNOSTIC",
+                        "BUSINESS_TARGET_COLUMN_METADATA_MISSING",
+                        "BUSINESS_TARGET_TABLE_EXCLUDED",
+                        "BUSINESS_TARGET_TABLE_PATTERN_EXCLUDED",
+                        "BUSINESS_TARGET_COLUMN_MISSING");
+        assertThat(validator.validate(snapshot).issues()).extracting(ValidationIssue::code)
+                .doesNotContain("BUSINESS_TARGET_COLUMN_EXCLUDED");
+    }
+
+    @Test
+    void trustsBusinessRuleAlreadyIncludedInResultReport() {
+        ProjectSnapshot snapshot = new ProjectSnapshot(1, 1, 2026, "202607", "APP",
+                ProjectStatus.NEEDS_REVIEW,
+                List.of(row("BUSINESS_RULE", "reported", Map.of(
+                        "wdqId", "STNDPRF_0000001", "ruleName", "reported", "ruleSql", "select 1",
+                        "qualityIndicator", "업무규칙", "schemaNormalized", "APP",
+                        "tableNormalized", "RESULT_TBL", "columnNormalized", "RESULT_COL",
+                        "reportedInResult", "Y"))),
+                List.of(), 0, 0, List.of(), null, null, null);
+
+        assertThat(validator.validate(snapshot).issues()).noneMatch(issue ->
+                issue.code().startsWith("BUSINESS_TARGET_"));
+    }
+
+    private NormalizedRow business(String key, String table, String column) {
+        return row("BUSINESS_RULE", key, Map.of(
+                "wdqId", "STNDPRF_0000001", "ruleName", key, "ruleSql", "select 1",
+                "qualityIndicator", "업무규칙", "schemaNormalized", "APP",
+                "tableNormalized", table, "columnNormalized", column));
+    }
+
     private NormalizedRow row(String type, String key, Map<String,String> values) {
         return new NormalizedRow(type, key, values, List.of(), "fingerprint");
     }

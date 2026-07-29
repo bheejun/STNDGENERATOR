@@ -1,6 +1,10 @@
 spring:
   application:
     name: CommonStandardRuleBuilder
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 200MB
   datasource:
     url: ${CSR_DB_URL:jdbc:postgresql://localhost:5432/csr}
     username: ${CSR_DB_USERNAME:postgres}
@@ -19,8 +23,16 @@ csr:
   storage:
     root: ${CSR_STORAGE_ROOT:./data}
   installer:
-    inno-compiler: ${CSR_INNO_COMPILER:C:/Program Files (x86)/Inno Setup 6/ISCC.exe}
     work-root: ${CSR_INSTALLER_WORK_ROOT:./target/installer-builds}
+  runner:
+    go-command: ${CSR_GO_COMMAND:./tools/go1.25.12/go/bin/go.exe}
+    go-root: ${CSR_GO_ROOT:./tools/go1.25.12/go}
+    db-host: ${CSR_RUNNER_DB_HOST:127.0.0.1}
+    db-port: ${CSR_RUNNER_DB_PORT:43396}
+    db-name: ${CSR_RUNNER_DB_NAME:dqlite}
+    db-user: ${CSR_RUNNER_DB_USER:root}
+    db-password: ${CSR_RUNNER_DB_PASSWORD:}
+    version-file: ${CSR_RUNNER_VERSION_FILE:C:\WDQ\ide\versionInfo.txt}
 
 management:
   endpoints:

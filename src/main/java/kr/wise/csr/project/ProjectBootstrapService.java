@@ -27,9 +27,11 @@ public class ProjectBootstrapService {
     public BootstrappedProject createFromResultReport(String systemCode, int targetYear, String deploymentYearMonth,
             ProjectCreationService.DuplicateHandling duplicateHandling, MultipartFile report) {
         WisedqReportMetadata metadata = metadataExtractor.extract(report);
-        ProjectCreationService.CreatedProject project = projects.create(new ProjectCreationService.CreateProject(
-                systemCode, metadata.systemName(), metadata.dbmsType(), metadata.dbmsName(), metadata.schemaName(),
-                targetYear, deploymentYearMonth, duplicateHandling));
+        ProjectCreationService.CreatedProject project = projects
+                .findActiveUploadTarget(systemCode, metadata.systemName(), targetYear)
+                .orElseGet(() -> projects.create(new ProjectCreationService.CreateProject(
+                        systemCode, metadata.systemName(), metadata.dbmsType(), metadata.dbmsName(),
+                        metadata.schemaName(), targetYear, deploymentYearMonth, duplicateHandling)));
         ProjectImportService.ImportResult imported = imports.importFiles(project.projectId(), List.of(report));
         return new BootstrappedProject(project, metadata, imported);
     }
@@ -37,7 +39,9 @@ public class ProjectBootstrapService {
     @Transactional
     public BootstrappedProject createFromCriteria(ProjectCreationService.CreateProject command,
             List<MultipartFile> criteriaFiles) {
-        ProjectCreationService.CreatedProject project = projects.create(command);
+        ProjectCreationService.CreatedProject project = projects
+                .findActiveUploadTarget(command.systemCode(), command.systemName(), command.targetYear())
+                .orElseGet(() -> projects.create(command));
         ProjectImportService.ImportResult imported = imports.importFiles(project.projectId(), criteriaFiles);
         if (imported.inputTrack() != ProjectImportService.InputTrack.CRITERIA_FILES)
             throw new IllegalArgumentException("진단기준 경로에는 결과보고서를 포함할 수 없습니다");

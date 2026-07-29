@@ -4,29 +4,64 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import kr.wise.csr.registry.WdqIdAllocator;
+import kr.wise.csr.registry.WdqIdType;
+import kr.wise.csr.system.DbmsTypeCodes;
+
 @Service
 public class ProjectCreationService {
     private final JdbcTemplate jdbc;
+    private final WdqIdAllocator ids;
     private final com.fasterxml.jackson.databind.ObjectMapper json = new com.fasterxml.jackson.databind.ObjectMapper();
 
-    public ProjectCreationService(JdbcTemplate jdbc) {
+    public ProjectCreationService(JdbcTemplate jdbc, WdqIdAllocator ids) {
         this.jdbc = jdbc;
+        this.ids = ids;
     }
 
     @Transactional
     public CreatedProject create(CreateProject command) {
         String requestedCode = command.systemCode().trim();
-        Long existingSystemId = findSystemId(requestedCode);
+        Long existingSystemId = findSystemId(requestedCode, command.systemName());
         if (existingSystemId == null) return createForNewSystem(command, requestedCode, 1);
-        return command.duplicateHandling() == DuplicateHandling.CREATE_SEPARATE
-                ? createSeparate(command, requestedCode)
-                : createVersion(existingSystemId, requestedCode, command);
+        String canonicalCode = jdbc.queryForObject("select system_code from standard_system where id=?",
+                String.class, existingSystemId);
+        return createVersion(existingSystemId, canonicalCode, command);
+    }
+
+    public Optional<CreatedProject> findActiveUploadTarget(String systemCode, String systemName, int targetYear) {
+        Long systemId = findSystemId(systemCode.trim(), systemName);
+        if (systemId == null) return Optional.empty();
+        return jdbc.query("""
+                select p.id,p.system_id,p.status,s.system_code,p.project_revision
+                  from build_project p join standard_system s on s.id=p.system_id
+                 where p.system_id=? and p.target_year=? and p.active=true
+                 order by p.project_revision desc,p.id desc limit 1
+                """, rs -> rs.next() ? Optional.of(new CreatedProject(rs.getLong(1), rs.getLong(2),
+                        ProjectStatus.valueOf(rs.getString(3)), rs.getString(4), rs.getInt(5))) : Optional.empty(),
+                systemId, targetYear);
+    }
+
+    @Transactional
+    public CreatedProject createUnderSystem(long systemId,int targetYear,String deploymentYearMonth) {
+        SystemIdentity system=jdbc.query("select id,system_code,system_name from standard_system where id=?",
+                rs->rs.next()?new SystemIdentity(rs.getLong(1),rs.getString(2),rs.getString(3)):null,systemId);
+        if(system==null) throw new IllegalArgumentException("공통표준 시스템을 찾을 수 없습니다: "+systemId);
+        Integer revision=jdbc.queryForObject("select coalesce(max(project_revision),0)+1 from build_project where system_id=?",Integer.class,systemId);
+        jdbc.update("update build_project set active=false,updated_at=now() where system_id=? and target_year=? and active",systemId,targetYear);
+        long projectId=jdbc.queryForObject("""
+                insert into build_project(system_id,target_year,deployment_year_month,status,project_revision)
+                values(?,?,?,'DRAFT',?) returning id
+                """,Long.class,systemId,targetYear,deploymentYearMonth,revision==null?1:revision);
+        ids.allocate(WdqIdType.DB_CONNECTION, systemId, Long.toString(systemId), projectId);
+        return new CreatedProject(projectId,systemId,ProjectStatus.DRAFT,system.systemCode(),revision==null?1:revision);
     }
 
     private CreatedProject createForNewSystem(CreateProject command, String systemCode, int revision) {
@@ -35,8 +70,14 @@ public class ProjectCreationService {
                   default_schema_original,default_schema_normalized)
                 values(?,?,?,?,?,?) returning id
                 """, Long.class, systemCode, command.systemName().trim(),
-                command.dbmsType().trim().toUpperCase(), command.dbmsPhysicalName().trim(),
+                DbmsTypeCodes.normalize(command.dbmsType()), command.dbmsPhysicalName().trim(),
                 command.defaultSchema().trim(), command.defaultSchema().trim().toUpperCase());
+        jdbc.update("""
+                insert into system_id_policy(system_id,id_type,id_prefix,number_width)
+                values (?, 'DB_CONNECTION', 'STNDDB_', 8), (?, 'EXCLUSION', 'STNDEXP_', 7),
+                  (?, 'VERIFICATION_RULE', 'STNDRULE_', 7), (?, 'CODE_RULE', 'STNDCD_', 8),
+                  (?, 'COLUMN_MAPPING', 'STND_', 10), (?, 'BUSINESS_RULE', 'STNDPRF_', 7)
+                """, systemId,systemId,systemId,systemId,systemId,systemId);
         return insertProject(systemId, systemCode, command, revision);
     }
 
@@ -49,25 +90,28 @@ public class ProjectCreationService {
         return insertProject(systemId, systemCode, command, revision == null ? 1 : revision);
     }
 
-    private CreatedProject createSeparate(CreateProject command, String requestedCode) {
-        int suffix = 2;
-        String separateCode;
-        do separateCode = requestedCode + "-" + suffix++;
-        while (findSystemId(separateCode) != null);
-        return createForNewSystem(command, separateCode, 1);
-    }
-
     private CreatedProject insertProject(long systemId, String systemCode, CreateProject command, int revision) {
         long projectId = jdbc.queryForObject("""
                 insert into build_project(system_id,target_year,deployment_year_month,status,project_revision)
                 values(?,?,?,'DRAFT',?) returning id
                 """, Long.class, systemId, command.targetYear(), command.deploymentYearMonth(), revision);
+        ids.allocate(WdqIdType.DB_CONNECTION, systemId, Long.toString(systemId), projectId);
         return new CreatedProject(projectId, systemId, ProjectStatus.DRAFT, systemCode, revision);
     }
 
-    private Long findSystemId(String systemCode) {
-        return jdbc.query("select id from standard_system where system_code=?", rs -> rs.next() ? rs.getLong(1) : null,
-                systemCode);
+    private Long findSystemId(String systemCode, String systemName) {
+        List<SystemIdentity> systems = jdbc.query("select id,system_code,system_name from standard_system",
+                (rs,n) -> new SystemIdentity(rs.getLong(1),rs.getString(2),rs.getString(3)));
+        String canonicalName = canonicalSystemName(systemName);
+        return systems.stream()
+                .filter(system -> system.systemCode().equalsIgnoreCase(systemCode)
+                        || canonicalSystemName(system.systemName()).equals(canonicalName))
+                .map(SystemIdentity::id).findFirst().orElse(null);
+    }
+
+    private String canonicalSystemName(String value) {
+        if (value == null) return "";
+        return value.trim().toUpperCase().replaceAll("\\s+", "").replace("시스템", "");
     }
 
     public List<ProjectOverview> list() {
@@ -92,7 +136,7 @@ public class ProjectCreationService {
             jdbc.update("""
                     update standard_system set system_code=?,system_name=?,dbms_type=?,dbms_physical_name=?,
                       default_schema_original=?,default_schema_normalized=?,updated_at=now() where id=?
-                    """, command.systemCode().trim(), command.systemName().trim(), command.dbmsType().trim().toUpperCase(),
+                    """, command.systemCode().trim(), command.systemName().trim(), DbmsTypeCodes.normalize(command.dbmsType()),
                     command.dbmsPhysicalName().trim(), command.defaultSchema().trim(),
                     command.defaultSchema().trim().toUpperCase(), before.systemId());
             jdbc.update("""
@@ -160,4 +204,5 @@ public class ProjectCreationService {
             String defaultSchema, int targetYear, String deploymentYearMonth) { }
     private record ProjectDetails(long systemId, String systemCode, String systemName, String dbmsType,
             String dbmsPhysicalName, String defaultSchema, int targetYear, String deploymentYearMonth) { }
+    private record SystemIdentity(long id,String systemCode,String systemName) { }
 }

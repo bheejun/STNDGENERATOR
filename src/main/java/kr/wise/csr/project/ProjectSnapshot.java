@@ -12,12 +12,23 @@ import kr.wise.csr.normalization.NormalizedRow;
 
 public record ProjectSnapshot(long projectId, long systemId, int targetYear, String deploymentYearMonth,
         String defaultSchema, String systemName, String dbmsPhysicalName, String dbmsType, String connectionWdqId,
-        ProjectStatus status, List<NormalizedRow> rows, List<DataConflict> conflicts,
+        DbConnectionTarget connectionTarget, ProjectStatus status, List<NormalizedRow> rows, List<DataConflict> conflicts,
         int excludedPt01Count, int excludedPt02Count, List<String> importErrors,
         String approvedBy, OffsetDateTime approvedAt, String approvedSnapshotHash) {
 
     public ProjectSnapshot {
         rows = List.copyOf(rows); conflicts = List.copyOf(conflicts); importErrors = List.copyOf(importErrors);
+    }
+
+    public ProjectSnapshot(long projectId, long systemId, int targetYear, String deploymentYearMonth,
+            String defaultSchema, String systemName, String dbmsPhysicalName, String dbmsType, String connectionWdqId,
+            ProjectStatus status, List<NormalizedRow> rows, List<DataConflict> conflicts,
+            int excludedPt01Count, int excludedPt02Count, List<String> importErrors,
+            String approvedBy, OffsetDateTime approvedAt, String approvedSnapshotHash) {
+        this(projectId, systemId, targetYear, deploymentYearMonth, defaultSchema, systemName, dbmsPhysicalName,
+                dbmsType, connectionWdqId, new DbConnectionTarget(dbmsPhysicalName, "", "", "", "", "", "",
+                        systemName, ""), status, rows, conflicts, excludedPt01Count, excludedPt02Count, importErrors,
+                approvedBy, approvedAt, approvedSnapshotHash);
     }
 
     public ProjectSnapshot(long projectId, long systemId, int targetYear, String deploymentYearMonth,
@@ -33,7 +44,7 @@ public record ProjectSnapshot(long projectId, long systemId, int targetYear, Str
         StringBuilder content = new StringBuilder().append(projectId).append('|').append(systemId).append('|')
                 .append(targetYear).append('|').append(deploymentYearMonth).append('|').append(defaultSchema).append('|')
                 .append(systemName).append('|').append(dbmsPhysicalName).append('|').append(dbmsType).append('|')
-                .append(connectionWdqId).append('\n');
+                .append(connectionWdqId).append('|').append(connectionTarget).append('\n');
         rows.stream().sorted(java.util.Comparator.comparing(NormalizedRow::dataType).thenComparing(NormalizedRow::logicalKey))
                 .forEach(row -> content.append(row.dataType()).append('|').append(row.logicalKey()).append('|').append(row.fingerprint()).append('\n'));
         conflicts.stream().sorted(java.util.Comparator.comparingLong(DataConflict::id))
@@ -46,7 +57,7 @@ public record ProjectSnapshot(long projectId, long systemId, int targetYear, Str
     public ProjectSnapshot approved(String approver, OffsetDateTime time) {
         String hash = contentHash();
         return new ProjectSnapshot(projectId, systemId, targetYear, deploymentYearMonth, defaultSchema,
-                systemName, dbmsPhysicalName, dbmsType, connectionWdqId, ProjectStatus.APPROVED,
+                systemName, dbmsPhysicalName, dbmsType, connectionWdqId, connectionTarget, ProjectStatus.APPROVED,
                 rows, conflicts, excludedPt01Count, excludedPt02Count, importErrors,
                 approver, time, hash);
     }

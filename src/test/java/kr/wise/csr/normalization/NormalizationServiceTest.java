@@ -27,22 +27,41 @@ class NormalizationServiceTest {
     }
 
     @Test
-    void differingCandidateContentCreatesOneUnresolvedConflict() {
+    void directCriteriaOverridesDifferingResultReportValue() {
         ImportCandidate left = candidate(WorkbookType.WISEDQ_RESULT, "RULE-A", "Y,N", "result", 2);
-        ImportCandidate right = candidate(WorkbookType.WDQ_CRITERIA, "RULE-A", "0,1", "criteria", 3);
+        ImportCandidate right = candidate(WorkbookType.CRITERIA_VERIFICATION_RULE, "RULE-A", "0,1", "criteria", 3);
 
-        NormalizationSummary summary = service.normalize(10, List.of(batch(WorkbookType.WISEDQ_RESULT, left), batch(WorkbookType.WDQ_CRITERIA, right)));
+        NormalizationSummary summary = service.normalize(10, List.of(batch(WorkbookType.WISEDQ_RESULT, left),
+                batch(WorkbookType.CRITERIA_VERIFICATION_RULE, right)));
 
         assertThat(summary.rows()).hasSize(1);
-        assertThat(summary.conflicts()).singleElement().satisfies(conflict -> assertThat(conflict.resolved()).isFalse());
-        assertThat(summary.needsReview()).isTrue();
+        assertThat(summary.rows().getFirst().values().get("expression")).isEqualTo("0,1");
+        assertThat(summary.rows().getFirst().sources()).hasSize(2);
+        assertThat(summary.conflicts()).isEmpty();
+    }
+
+    @Test
+    void caseDifferentLogicalKeysRemainSeparate() {
+        ImportCandidate upper = candidate(WorkbookType.CRITERIA_VERIFICATION_RULE,
+                "[기본]여부(Y,N)|Y,N", "Y,N", "criteria", 2);
+        ImportCandidate lower = candidate(WorkbookType.CRITERIA_VERIFICATION_RULE,
+                "[기본]여부(y,n)|y,n", "y,n", "criteria", 3);
+
+        NormalizationSummary summary = service.normalize(10, List.of(
+                batch(WorkbookType.CRITERIA_VERIFICATION_RULE, upper),
+                batch(WorkbookType.CRITERIA_VERIFICATION_RULE, lower)));
+
+        assertThat(summary.rows()).hasSize(2);
+        assertThat(summary.conflicts()).isEmpty();
     }
 
     @Test
     void conflictCanUseSourceManualValueOrBeExcluded() {
         var summary = service.normalize(10, List.of(
-                batch(WorkbookType.WISEDQ_RESULT, candidate(WorkbookType.WISEDQ_RESULT, "RULE-A", "Y,N", "result", 2)),
-                batch(WorkbookType.WDQ_CRITERIA, candidate(WorkbookType.WDQ_CRITERIA, "RULE-A", "0,1", "criteria", 3))));
+                batch(WorkbookType.CRITERIA_VERIFICATION_RULE,
+                        candidate(WorkbookType.CRITERIA_VERIFICATION_RULE, "RULE-A", "Y,N", "criteria-a", 2)),
+                batch(WorkbookType.CRITERIA_VERIFICATION_RULE,
+                        candidate(WorkbookType.CRITERIA_VERIFICATION_RULE, "RULE-A", "0,1", "criteria-b", 3))));
         DataConflict conflict = summary.conflicts().getFirst();
 
         NormalizationSummary manual = new ConflictService().resolve(summary,

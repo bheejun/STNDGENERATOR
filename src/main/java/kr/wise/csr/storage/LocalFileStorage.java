@@ -10,6 +10,7 @@ import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.Comparator;
 import java.util.Objects;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -66,6 +67,24 @@ public class LocalFileStorage implements FileStorage {
         Path path = confined(Path.of(storedPath));
         if (!Files.isRegularFile(path)) throw new FileStorageException("Stored file does not exist: " + path);
         return new PathResource(path);
+    }
+
+    @Override
+    public void deleteProject(long projectId) {
+        if (projectId < 1) throw new IllegalArgumentException("projectId must be positive");
+        Path directory = confined(root.resolve(Long.toString(projectId)));
+        if (!Files.exists(directory)) return;
+        try (var paths = Files.walk(directory)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException e) {
+                    throw new FileStorageException("Failed to delete project file: " + path, e);
+                }
+            });
+        } catch (IOException e) {
+            throw new FileStorageException("Failed to delete project directory: " + directory, e);
+        }
     }
 
     private void validateOriginalName(String originalName) {

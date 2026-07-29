@@ -1,0 +1,27 @@
+.criteria-manager .manager-controls {
+  grid-template-columns: 1.2fr .7fr .7fr 1fr;
+  margin-bottom: 10px;
+}
+.criteria-selection-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 2px 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.criteria-selection-bar label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.criteria-table { min-width: 800px; }
+.criteria-table .check-cell {
+  width: 36px;
+  text-align: center;
+  padding-left: 9px;
+  padding-right: 9px;
+}
+@media(max-width:720px) {
+  .criteria-manager .manager-controls { grid-template-columns: 1fr; }
+}

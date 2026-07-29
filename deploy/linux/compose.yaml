@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: csr
+      POSTGRES_USER: ${CSR_DB_USERNAME}
+      POSTGRES_PASSWORD: ${CSR_DB_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${CSR_SERVER_PORT}:18180"
+    environment:
+      CSR_DB_URL: jdbc:postgresql://postgres:5432/csr
+      CSR_DB_USERNAME: ${CSR_DB_USERNAME}
+      CSR_DB_PASSWORD: ${CSR_DB_PASSWORD}
+      CSR_SERVER_PORT: 18180
+      CSR_STORAGE_ROOT: /srv/data
+      CSR_INSTALLER_WORK_ROOT: /srv/installer-builds
+      CSR_GO_COMMAND: /usr/local/go/bin/go
+      CSR_GO_ROOT: /usr/local/go
+      CSR_RUNNER_DB_HOST: ${CSR_RUNNER_DB_HOST}
+      CSR_RUNNER_DB_PORT: ${CSR_RUNNER_DB_PORT}
+      CSR_RUNNER_DB_NAME: ${CSR_RUNNER_DB_NAME}
+      CSR_RUNNER_DB_USER: ${CSR_RUNNER_DB_USER}
+      CSR_RUNNER_DB_PASSWORD: ${CSR_RUNNER_DB_PASSWORD}
+      CSR_RUNNER_VERSION_FILE: ${CSR_RUNNER_VERSION_FILE}
+    volumes:
+      - ./data:/srv/data
+      - ./installer-builds:/srv/installer-builds
+
+volumes:
+  postgres-data:

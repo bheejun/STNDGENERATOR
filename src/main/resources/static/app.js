@@ -1,10 +1,53 @@
 const $ = selector => document.querySelector(selector);
-let projectId = null;
+let projectId = Number(sessionStorage.getItem('csr.currentProjectId')) || null;
 let projectRows = [];
 let managedCriteria = [];
 let editingCriteria = null;
 let criteriaPage = 1;
+let criteriaErrorKeys = new Set();
+const selectedCriteriaIds = new Set();
+let systemRows = [];
+let selectedSystemId = null;
 const criteriaPageSize = 50;
+const SYSTEM_FIELDS = ['systemCode','systemName','connectionLogicalName','dbmsPhysicalName','dbmsType',
+  'defaultSchema','wdqNamespace','criteriaPrefix','active'];
+const systemPrefixLabel = document.createElement('label');
+systemPrefixLabel.innerHTML = '공통 prefix<input name="criteriaPrefix" maxlength="300" placeholder="[{year}표준시스템DB {systemName}]"><small class="field-help">{year}, {systemName}을 사용할 수 있으며 검증룰·업무규칙·제외 사유에 동일 적용됩니다.</small>';
+const systemActiveField = document.querySelector('#system-edit-fields [name="active"]')?.closest('label');
+if (systemActiveField) systemActiveField.before(systemPrefixLabel);
+const DBMS_TYPES = [
+  ['ORA', 'Oracle'], ['TIB', 'Tibero'], ['ALT', 'Altibase'], ['POS', 'PostgreSQL'],
+  ['MRA', 'MariaDB'], ['MYS', 'MySQL'], ['MSQ', 'MS-SQL'], ['CBR', 'CUBRID'],
+  ['UDB', 'DB2 UDB'], ['DB2', 'DB2'], ['SYA', 'Sybase ASE'], ['SYQ', 'Sybase IQ']
+];
+const CRITERIA_CATEGORY_LABELS = {
+  WDQ_CRITERIA: '통합 진단기준', CRITERIA_VERIFICATION_RULE: '검증룰',
+  CRITERIA_DOMAIN_MAPPING: '도메인 매핑',
+  CRITERIA_BUSINESS_RULE: '업무규칙', CRITERIA_EXCLUSION_PATTERN: '제외기준 룰', CRITERIA_TABLE_EXCLUSION: '테이블 제외',
+  CRITERIA_COLUMN_EXCLUSION: '컬럼 제외', CRITERIA_CODE_RULE: '코드규칙'
+};
+for (const input of document.querySelectorAll('input[name="dbmsType"]')) {
+  const select = document.createElement('select');
+  select.name = input.name;
+  select.required = input.required;
+  select.innerHTML = '<option value="">DBMS 선택</option>' +
+    DBMS_TYPES.map(([code, name]) => `<option value="${code}">${name} (${code})</option>`).join('');
+  input.replaceWith(select);
+}
+for (const button of document.querySelectorAll('dialog button[value="cancel"]')) {
+  button.addEventListener('click', event => {
+    event.preventDefault();
+    button.closest('dialog')?.close('cancel');
+  });
+}
+document.querySelectorAll('option[value="CREATE_SEPARATE"]').forEach(option => option.remove());
+document.querySelectorAll('.main-nav [data-view="register"]')
+  .forEach(button => button.remove());
+document.querySelectorAll('.main-nav [data-view="dashboard"]').forEach(button => {
+  if (button.textContent.trim() !== '전체 프로젝트 현황') button.remove();
+});
+document.querySelectorAll('select[name="duplicateHandling"] option[value="CREATE_VERSION"]')
+  .forEach(option => option.textContent = '공통표준 시스템의 새 버전');
 
 const today = new Date();
 for (const input of document.querySelectorAll('.target-year')) input.value = today.getFullYear();
@@ -18,6 +61,53 @@ function toast(message, error = false) {
   element.className = `toast show${error ? ' error' : ''}`;
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => element.className = 'toast', 3500);
+}
+
+async function loadLatestReportReview(id) {
+  const panel = $('#result-panel');
+  let box = $('#report-review-result');
+  if (!box) {
+    box = document.createElement('section');
+    box.id = 'report-review-result';
+    box.className = 'report-review-result';
+    panel.insertBefore(box, $('#metadata'));
+  }
+  const response = await fetch(`/api/projects/${id}/report-reviews/latest`);
+  if (response.status === 404) {
+    box.hidden = true;
+    return;
+  }
+  if (!response.ok) {
+    box.hidden = true;
+    return;
+  }
+  const review = await response.json();
+  const verdictLabel = { PASS: '적합', CONDITIONAL: '조건부 적합', FAIL: '부적합' }[review.verdict] || review.verdict;
+  const metrics = review.metrics || {};
+  const metricCards = [
+    ['진단대상', metrics.targetTableCount ?? 0],
+    ['제외대상', metrics.excludedTableCount ?? 0],
+    ['추가 검증룰', metrics.customRuleMappingCount ?? 0],
+    ['업무규칙', metrics.businessRuleCount ?? 0],
+    ['미완료 실행', metrics.incompleteExecutionCount ?? 0]
+  ].map(([label,value]) => `<div><small>${label}</small><strong>${Number(value).toLocaleString()}건</strong></div>`).join('');
+  const issues = (review.issues || []).map(issue =>
+    `<li class="${issue.blocksAdoption ? 'blocking' : ''}"><strong>${escapeHtml(issue.code)}</strong> ${escapeHtml(issue.message)}
+      <small>${escapeHtml(issue.sheetName || '')}${issue.rowNumber ? ` · ${issue.rowNumber}행` : ''}</small></li>`).join('');
+  const decisionReasons = (review.decisionReasons || []).map(reason =>
+    `<li><strong>${escapeHtml(reason.message)}</strong>
+      ${reason.evidence ? `<span>${escapeHtml(reason.evidence)}</span>` : ''}
+      <small>${escapeHtml(reason.code)}${reason.sheetName ? ` · ${escapeHtml(reason.sheetName)}` : ''}${reason.rowNumber ? ` · ${reason.rowNumber}행` : ''}</small></li>`).join('');
+  const reasonBlock = review.verdict === 'PASS'
+    ? ''
+    : `<section class="decision-reasons ${review.verdict.toLowerCase()}"><h4>${verdictLabel} 판정 사유</h4>
+        <ul>${decisionReasons || '<li><strong>판정 사유가 기록되지 않았습니다.</strong></li>'}</ul></section>`;
+  box.hidden = false;
+  box.innerHTML = `<div class="review-heading"><div><small>결과보고서 유효성 검토 · ${escapeHtml(review.engineVersion)}</small>
+      <h3>공통표준 진단규칙 채택 검토</h3></div><span class="review-verdict ${review.verdict.toLowerCase()}">${verdictLabel}</span></div>
+    <div class="review-metrics">${metricCards}</div>
+    ${reasonBlock}
+    ${issues ? `<ul class="review-issues">${issues}</ul>` : '<p class="review-ok">차단 오류와 확인 경고가 없습니다.</p>'}`;
 }
 
 async function api(url, options) {
@@ -36,23 +126,50 @@ function escapeHtml(value) {
   })[character]);
 }
 
-function setLoading(button, loading, label) {
-  button.disabled = loading;
-  button.innerHTML = loading ? '추출 중입니다…' : label;
+function setCurrentProject(id) {
+  const selected = Number(id) || null;
+  projectId = selected;
+  if (selected) sessionStorage.setItem('csr.currentProjectId', String(selected));
+  else sessionStorage.removeItem('csr.currentProjectId');
+  for (const selector of ['#existing-project', '#report-project', '#criteria-upload-project',
+    '#manage-project', '#artifact-project-select']) {
+    const element = $(selector);
+    if (element && [...element.options].some(option => Number(option.value) === selected))
+      element.value = String(selected);
+  }
 }
 
 const statusLabels = { DRAFT: '작성중', IMPORTED: '가져오기 완료', NEEDS_REVIEW: '검토 필요',
   VALIDATED: '검증 완료', APPROVED: '승인 완료', GENERATED: '생성 완료' };
 
-function showView(view) {
+const VIEW_ROUTES = { systems: '#/systems', dashboard: '#/projects', artifacts: '#/artifacts',
+  ids: '#/numbering', register: '#/register', manage: '#/manage', results: '#/results',
+  reportUpload: '#/upload/result-report', criteriaUpload: '#/upload/criteria' };
+
+function updateRoute(hash) {
+  if (window.location.hash === hash) return;
+  history.pushState(null, '', hash);
+}
+
+function showView(view, route = true) {
   document.querySelectorAll('[data-view-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.viewPanel === view));
   document.querySelectorAll('.main-nav [data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === view));
+  if (route) updateRoute(VIEW_ROUTES[view] || `#/${view}`);
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (view === 'systems') loadSystems();
+  if (view === 'ids') loadSystems().then(loadIdPolicies);
+  if (view === 'artifacts') loadArtifactHistory();
 }
 
 document.querySelector('.main-nav').addEventListener('click', event => {
   const button = event.target.closest('[data-view]');
-  if (button) showView(button.dataset.view);
+  if (!button) return;
+  if (button.dataset.view === 'results') {
+    const id = projectId || Number($('#existing-project').value) || projectRows.find(row => row.active)?.projectId;
+    if (id) return openProject(id);
+  }
+  showView(button.dataset.view);
+  if (button.dataset.view === 'manage' && projectId) loadManagedCriteria();
 });
 
 async function loadProjects() {
@@ -79,7 +196,7 @@ function renderProjectList() {
       <td>${row.targetYear} / ${escapeHtml(row.deploymentYearMonth)}</td>
       <td><span class="project-status ${statusClass}">${statusLabels[row.status] || row.status}</span></td>
       <td>${Number(row.itemCount).toLocaleString()}건</td><td>${row.unresolvedConflictCount}건</td>
-      <td>${updated}</td><td class="row-actions"><button type="button" class="project-open" data-project-id="${row.projectId}">열기</button><button type="button" class="project-open" data-edit-project="${row.projectId}">수정</button></td></tr>`;
+      <td>${updated}</td><td class="row-actions"><button type="button" class="project-open" data-project-id="${row.projectId}">결과 보기</button><button type="button" class="project-open" data-edit-project="${row.projectId}">수정</button><button type="button" class="project-open danger-button" data-delete-project="${row.projectId}">삭제</button></td></tr>`;
   }).join('') : '<tr><td colspan="8" class="project-empty">조건에 맞는 프로젝트가 없습니다.</td></tr>';
 }
 
@@ -87,6 +204,8 @@ $('#refresh-projects').addEventListener('click', loadProjects);
 $('#project-search').addEventListener('input', renderProjectList);
 $('#project-status-filter').addEventListener('change', renderProjectList);
 $('#project-list').addEventListener('click', async event => {
+  const deleteButton = event.target.closest('[data-delete-project]');
+  if (deleteButton) return deleteProject(Number(deleteButton.dataset.deleteProject), deleteButton);
   const editButton = event.target.closest('[data-edit-project]');
   if (editButton) return openProjectEditor(Number(editButton.dataset.editProject));
   const button = event.target.closest('[data-project-id]');
@@ -121,36 +240,100 @@ $('#save-project').addEventListener('click', async () => {
   finally { button.disabled = false; }
 });
 
-async function openProject(id) {
+async function deleteProject(id, button) {
+  const overview = projectRows.find(row => row.projectId === id);
+  if (!overview) return toast('삭제할 프로젝트를 찾을 수 없습니다.', true);
+  const label = `${overview.systemName} / ${overview.targetYear} / v${overview.revision}`;
+  if (!window.confirm(`${label} 프로젝트를 삭제하시겠습니까?\n\n업로드 파일, 추출 기준, 검토 결과와 생성 이력이 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.`)) return;
+  if (button) button.disabled = true;
+  try {
+    await api(`/api/projects/${id}`, { method: 'DELETE' });
+    if (projectId === id) {
+      setCurrentProject(null);
+      showView('dashboard');
+    }
+    await loadProjects();
+    await loadSystems();
+    if (selectedSystemId && systemRows.some(system => system.id === selectedSystemId)) {
+      await openSystemWorkspace(selectedSystemId);
+    }
+    toast(`${label} 프로젝트를 삭제했습니다.`);
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    if (button?.isConnected) button.disabled = false;
+  }
+}
+
+async function openProject(id, route = true) {
   const overview = projectRows.find(row => row.projectId === id);
   const project = await api(`/api/projects/${id}`);
-  projectId = id;
-  showView('import');
+  setCurrentProject(id);
+  showView('results', false);
+  if (route) updateRoute(`#/results/${id}`);
+  $('#existing-project').value = String(id);
   $('#metadata').innerHTML = [
     ['입력 경로', '기존 프로젝트'], ['프로젝트', `#${id} · ${overview?.systemCode || ''} · v${overview?.revision || 1}`],
     ['시스템', overview?.systemName || project.systemName], ['상태', statusLabels[project.status] || project.status]
   ].map(([label, value]) => `<div><small>${label}</small><strong>${escapeHtml(value)}</strong></div>`).join('');
   renderProject(project);
+  await renderResultValidation(id);
+  await loadProjectFiles(id);
+  await loadLatestReportReview(id);
   setArtifactLinks(id);
   $('#result-panel').classList.remove('locked');
-  const approved = project.status === 'APPROVED' || project.status === 'GENERATED';
-  for (const id of ['workbook-download', 'sql-download', 'exe-download', 'delete-exe-download'])
-    $(`#${id}`).classList.toggle('disabled', !approved);
-  $('#approve-button').disabled = approved;
-  $('#approve-button').textContent = approved ? '승인 완료' : '검증하고 승인하기';
-  $('#step-1').classList.remove('active');
-  $('#step-2').classList.toggle('active', !approved);
-  $('#step-3').classList.toggle('active', approved);
-  $('#result-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  for (const id of ['workbook-download', 'ddl-download', 'combined-sql-download', 'sql-download', 'exe-download', 'delete-exe-download'])
+    $(`#${id}`).classList.remove('disabled');
+  $('#step-1').classList.add('active');
+  $('#step-2').classList.add('active');
+  $('#step-3').classList.add('active');
+  (overview?.sourceFileCount ? $('#result-panel') : document.querySelector('.existing-import-panel'))
+    .scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+$('#existing-project').addEventListener('change', event => {
+  const id = Number(event.target.value);
+  if (id && id !== projectId) openProject(id).catch(error => toast(error.message, true));
+});
+document.querySelector('.result-context-bar').addEventListener('click', event => {
+  const button = event.target.closest('[data-go-upload]');
+  if (button) showView(button.dataset.goUpload);
+});
+$('#report-project').addEventListener('change', event => setCurrentProject(event.target.value));
+$('#criteria-upload-project').addEventListener('change', event => {
+  setCurrentProject(event.target.value);
+  criteriaUploadRows = [];
+  renderCriteriaUploadStatus();
+});
+
+async function loadProjectFiles(id) {
+  const box=$('#project-source-files');
+  if(!box)return;
+  const files=await api(`/api/projects/${id}/files`);
+  box.innerHTML=files.length?`<h3>등록된 원본 파일</h3>${files.map(file=>`
+    <div class="source-file-row"><div><strong>${escapeHtml(file.originalName)}</strong>
+    <small><span class="source-track ${file.inputTrack === 'RESULT_REPORT' ? 'report' : 'criteria'}">${file.inputTrack === 'RESULT_REPORT' ? '결과보고서' : file.inputTrack === 'CRITERIA_FILES' ? '진단기준' : '유형 확인 전'}</span>
+    ${escapeHtml(file.inputTrack === 'RESULT_REPORT' ? 'WISE DQ 결과보고서' : CRITERIA_CATEGORY_LABELS[file.workbookType] || file.workbookType || '')} · ${escapeHtml(file.parseStatus)} · ${Number(file.byteSize).toLocaleString()} B · ${new Date(file.createdAt).toLocaleString('ko-KR')}</small></div>
+    <a class="secondary" href="/api/projects/${id}/files/${file.id}">다운로드</a></div>`).join('')}`
+    :'<div class="project-empty">등록된 원본 파일이 없습니다.</div>';
 }
 
 function renderProjectSelectors() {
   const active = projectRows.filter(row => row.active);
   const options = active.map(row => `<option value="${row.projectId}">${escapeHtml(row.systemName)} · ${escapeHtml(row.systemCode)} · v${row.revision} · ${statusLabels[row.status] || row.status}</option>`).join('');
   $('#existing-project').innerHTML = options || '<option value="">등록된 프로젝트 없음</option>';
+  $('#report-project').innerHTML = '<option value="">프로젝트 선택</option>' + options;
+  $('#criteria-upload-project').innerHTML = '<option value="">프로젝트 선택</option>' + options;
   const previous = $('#manage-project').value;
   $('#manage-project').innerHTML = '<option value="">프로젝트 선택</option>' + options;
   if (active.some(row => String(row.projectId) === previous)) $('#manage-project').value = previous;
+  const artifactPrevious = $('#artifact-project-select')?.value;
+  if ($('#artifact-project-select')) {
+    $('#artifact-project-select').innerHTML = '<option value="">프로젝트 선택</option>' + options;
+    if (active.some(row => String(row.projectId) === artifactPrevious)) $('#artifact-project-select').value = artifactPrevious;
+  }
+  if (projectId && active.some(row => row.projectId === projectId)) setCurrentProject(projectId);
+  else if (projectId) setCurrentProject(null);
 }
 
 $('#project-register-form').addEventListener('submit', async event => {
@@ -170,23 +353,140 @@ $('#project-register-form').addEventListener('submit', async event => {
   finally { button.disabled = false; }
 });
 
-$('#existing-import-form').addEventListener('submit', async event => {
+async function importExistingFiles(event, projectSelector, fileSelector, track, successMessage) {
   event.preventDefault();
-  const id = Number($('#existing-project').value);
+  const id = Number($(projectSelector).value);
   if (!id) return toast('가져올 프로젝트를 선택하세요.', true);
-  const button = event.currentTarget.querySelector('button'); button.disabled = true;
+  setCurrentProject(id);
+  const files = [...$(fileSelector).files];
+  if (!files.length) return toast('등록할 엑셀 파일을 선택하세요.', true);
+  const button = event.currentTarget.querySelector('button[type="submit"]'); button.disabled = true;
   try {
     const form = new FormData();
-    for (const file of $('#existing-files').files) form.append('files', file);
-    await api(`/api/projects/${id}/imports`, { method: 'POST', body: form });
+    for (const file of files) form.append('files', file);
+    await api(`/api/projects/${id}/imports/${track}`, { method: 'POST', body: form });
     await loadProjects(); await openProject(id);
-    toast('등록 프로젝트에 진단기준을 가져왔습니다.');
+    toast(successMessage);
+  } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; }
+}
+
+$('#existing-report-form').addEventListener('submit', event =>
+  importExistingFiles(event, '#report-project', '#existing-report-file', 'result-report', '결과보고서 분석과 등록을 완료했습니다.'));
+
+let criteriaUploadRows = [];
+function renderCriteriaUploadStatus() {
+  const box = $('#criteria-upload-status');
+  if (!criteriaUploadRows.length) { box.hidden = true; box.innerHTML = ''; return; }
+  const success = criteriaUploadRows.filter(row => row.state === 'success').length;
+  const failed = criteriaUploadRows.filter(row => row.state === 'failed').length;
+  box.hidden = false;
+  box.innerHTML = `<div class="criteria-upload-summary"><strong>업로드 현황 ${criteriaUploadRows.length}개</strong>
+    <span>완료 ${success} · 실패 ${failed} · 처리 중 ${criteriaUploadRows.length - success - failed}</span></div>` +
+    criteriaUploadRows.map(row => `<div class="criteria-upload-status-row ${row.state}">
+      <div><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.detail || '')}</small></div>
+      <span>${escapeHtml(row.category || '형식 확인 중')}</span><span class="state">${escapeHtml(row.label)}</span>
+    </div>`).join('');
+}
+async function uploadCriteriaFile(projectIdValue, file, row, category = '') {
+  row.state = 'uploading'; row.label = '업로드 중'; row.detail = `${(file.size / 1024 / 1024).toFixed(1)} MB`;
+  renderCriteriaUploadStatus();
+  try {
+    const form = new FormData(); form.append('files', file);
+    const query = category ? `?category=${encodeURIComponent(category)}` : '';
+    const result = await api(`/api/projects/${projectIdValue}/imports/criteria${query}`,
+      { method: 'POST', body: form });
+    const imported = result.files?.[0] || {};
+    row.state = 'success'; row.label = '등록 완료';
+    row.category = CRITERIA_CATEGORY_LABELS[imported.workbookType] || imported.workbookType || category || '진단기준';
+    row.detail = `${Number(imported.candidateCount || 0).toLocaleString()}건 인식 · 프로젝트 총 ${Number(result.normalizedRowCount || 0).toLocaleString()}건`;
+  } catch (error) {
+    row.state = 'failed'; row.label = '등록 실패'; row.detail = error.message;
+  }
+  renderCriteriaUploadStatus();
+}
+
+$('#criteria-batch-select').addEventListener('click', () => $('#criteria-batch-files').click());
+$('#criteria-batch-files').addEventListener('change', async event => {
+  const files = [...event.target.files];
+  if (!files.length) return;
+  const id = Number($('#criteria-upload-project').value);
+  if (!id) { event.target.value = ''; return toast('대상 프로젝트를 선택하세요.', true); }
+  setCurrentProject(id);
+  const button = $('#criteria-batch-select');
+  button.disabled = true; button.textContent = `${files.length}개 등록 중`;
+  criteriaUploadRows = files.map(file => ({
+    name: file.name, state: 'pending', label: '대기', category: '',
+    detail: `${(file.size / 1024 / 1024).toFixed(1)} MB`
+  }));
+  renderCriteriaUploadStatus();
+  for (let index = 0; index < files.length; index++)
+    await uploadCriteriaFile(id, files[index], criteriaUploadRows[index]);
+  event.target.value = '';
+  button.disabled = false; button.textContent = '여러 파일 선택';
+  await loadProjects();
+});
+
+$('#criteria-upload-grid').addEventListener('click', event => {
+  const button = event.target.closest('.criteria-upload-card button');
+  if (button && !button.disabled) button.closest('.criteria-upload-card').querySelector('input[type="file"]').click();
+});
+$('#criteria-upload-grid').addEventListener('change', async event => {
+  const input = event.target.closest('.criteria-upload-card input[type="file"]');
+  if (!input || !input.files.length) return;
+  const id = Number($('#criteria-upload-project').value);
+  if (!id) { input.value = ''; return toast('가져올 프로젝트를 선택하세요.', true); }
+  setCurrentProject(id);
+  const card = input.closest('.criteria-upload-card');
+  const button = card.querySelector('button');
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = `${input.files.length}개 등록 중…`;
+  const files = [...input.files];
+  const rows = files.map(file => ({
+    name: file.name, state: 'pending', label: '대기',
+    category: card.querySelector('strong').textContent, detail: ''
+  }));
+  criteriaUploadRows.push(...rows);
+  renderCriteriaUploadStatus();
+  try {
+    for (let index = 0; index < files.length; index++)
+      await uploadCriteriaFile(id, files[index], rows[index], card.dataset.category);
+    input.value = '';
+    await loadProjects();
+  } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; button.textContent = originalLabel; }
+});
+
+document.querySelector('.project-detail-tools').addEventListener('click', async event => {
+  const button = event.target.closest('[data-reextract-track]');
+  if (!button) return;
+  const id = Number($('#existing-project').value);
+  if (!id) return toast('재추출할 프로젝트를 선택하세요.', true);
+  const track = button.dataset.reextractTrack;
+  const label = track === 'result-report' ? '결과보고서' : track === 'criteria' ? '진단기준' : '전체 원본';
+  if (!confirm(`${label}을 다시 파싱하시겠습니까?\n직접 수정한 진단기준은 유지됩니다.`)) return;
+  button.disabled = true;
+  try {
+    const endpoint = track === 'all' ? `/api/projects/${id}/reextract` : `/api/projects/${id}/reextract/${track}`;
+    const result = await api(endpoint, { method: 'POST' });
+    await loadProjects();
+    await openProject(id);
+    if (Number($('#manage-project').value) === id) {
+      ddlValidationProject = 0;
+      await loadManagedCriteria();
+    }
+    toast(`${label} 재추출 완료: 병합 진단기준 ${Number(result.normalizedRowCount).toLocaleString()}건`);
   } catch (error) { toast(error.message, true); }
   finally { button.disabled = false; }
 });
 
-$('#manage-project').addEventListener('change', loadManagedCriteria);
+$('#manage-project').addEventListener('change', event => {
+  setCurrentProject(event.target.value);
+  loadManagedCriteria();
+});
 $('#criteria-type').addEventListener('change', () => { criteriaPage = 1; renderManagedCriteria(); });
+$('#criteria-validation-filter').addEventListener('change', () => { criteriaPage = 1; renderManagedCriteria(); });
 $('#criteria-search').addEventListener('input', () => { criteriaPage = 1; renderManagedCriteria(); });
 $('#criteria-prev').addEventListener('click', () => { if (criteriaPage > 1) { criteriaPage--; renderManagedCriteria(); } });
 $('#criteria-next').addEventListener('click', () => { criteriaPage++; renderManagedCriteria(); });
@@ -195,15 +495,37 @@ async function loadManagedCriteria() {
   const id = Number($('#manage-project').value);
   if (!id) { managedCriteria = []; return renderManagedCriteria(); }
   $('#criteria-list').innerHTML = '<tr><td colspan="4" class="project-empty">진단기준을 불러오는 중입니다.</td></tr>';
-  try { managedCriteria = await api(`/api/projects/${id}/criteria`); criteriaPage = 1; renderManagedCriteria(); }
+  try { managedCriteria = await api(`/api/projects/${id}/criteria`); selectedCriteriaIds.clear(); criteriaPage = 1; renderManagedCriteria(); }
   catch (error) { toast(error.message, true); }
 }
 
+$('#criteria-revalidate-button').addEventListener('click', async event => {
+  const project = Number($('#manage-project').value);
+  if (!project) return toast('재검증할 프로젝트를 먼저 선택하세요.', true);
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = '검증 중...';
+  try {
+    ddlValidationProject = 0;
+    await loadManagedCriteria();
+    toast('최신 저장값으로 WDQ 재검증을 완료했습니다.');
+  } catch (error) { toast(error.message, true); }
+  finally {
+    button.disabled = false;
+    button.textContent = 'WDQ 재검증';
+  }
+});
+
 function renderManagedCriteria() {
+  renderCodeDataWarning();
+  renderDdlValidation();
   const type = $('#criteria-type').value;
+  const validation = $('#criteria-validation-filter').value;
   const keyword = $('#criteria-search').value.trim().toLowerCase();
-  const rows = managedCriteria.filter(item => (!type || item.dataType === type) && (!keyword ||
-    item.logicalKey.toLowerCase().includes(keyword) || JSON.stringify(item.values).toLowerCase().includes(keyword)));
+  const rows = managedCriteria.filter(item => (!type || item.dataType === type)
+    && (!validation || (validation === 'ERROR') === criteriaErrorKeys.has(item.logicalKey))
+    && (!keyword || item.logicalKey.toLowerCase().includes(keyword)
+      || JSON.stringify(item.values).toLowerCase().includes(keyword)));
   const pageCount = Math.max(1, Math.ceil(rows.length / criteriaPageSize));
   criteriaPage = Math.min(criteriaPage, pageCount);
   const pageRows = rows.slice((criteriaPage - 1) * criteriaPageSize, criteriaPage * criteriaPageSize);
@@ -214,11 +536,170 @@ function renderManagedCriteria() {
   $('#criteria-list').innerHTML = pageRows.length ? pageRows.map(item => {
     const preview = Object.entries(item.values).filter(([key, value]) => key !== 'wdqId' && value).slice(0, 3)
       .map(([key, value]) => `${key}: ${value}`).join(' · ');
-    return `<tr><td><span class="criteria-type">${escapeHtml(item.dataType)}</span></td><td class="criteria-key">${escapeHtml(item.logicalKey)}</td><td class="criteria-preview">${escapeHtml(preview)}</td><td class="row-actions"><button type="button" class="project-open" data-edit-item="${item.id}">수정</button><button type="button" class="project-open danger-button" data-delete-item="${item.id}">삭제</button></td></tr>`;
-  }).join('') : '<tr><td colspan="4" class="project-empty">표시할 진단기준이 없습니다.</td></tr>';
+    const origin = item.dataType === 'VERIFICATION_RULE'
+      && (item.values.ruleOrigin?.startsWith('ADDITIONAL') || item.values.sourceRuleName)
+      ? '<span class="criteria-origin">추가 검증룰</span>' : '';
+    return `<tr><td class="check-cell"><input type="checkbox" data-select-criteria="${item.id}" ${selectedCriteriaIds.has(item.id) ? 'checked' : ''}></td><td><span class="criteria-type">${escapeHtml(item.dataType)}</span>${origin}</td><td class="criteria-key">${escapeHtml(item.logicalKey)}</td><td class="criteria-preview">${escapeHtml(preview)}</td><td class="row-actions"><button type="button" class="project-open" data-edit-item="${item.id}">수정</button><button type="button" class="project-open danger-button" data-delete-item="${item.id}">삭제</button></td></tr>`;
+  }).join('') : '<tr><td colspan="5" class="project-empty">표시할 진단기준이 없습니다.</td></tr>';
+  const allSelected = rows.length > 0 && rows.every(item => selectedCriteriaIds.has(item.id));
+  $('#criteria-select-filtered').checked = allSelected;
+  $('#criteria-select-filtered').indeterminate = !allSelected && rows.some(item => selectedCriteriaIds.has(item.id));
+  $('#criteria-selected-count').textContent = `${selectedCriteriaIds.size.toLocaleString()}건 선택`;
+  $('#criteria-bulk-button').disabled = selectedCriteriaIds.size === 0;
+}
+
+let ddlValidationProject = 0;
+let activeValidationProject = 0;
+let activeValidationIssues = [];
+const validationCodeLabels = {
+  WDQ_COLUMN_TOO_LONG: 'WDQ 컬럼 길이 초과',
+  BUSINESS_TARGET_TABLE_NOT_DIAGNOSTIC: '업무규칙 테이블 미등록',
+  BUSINESS_TARGET_COLUMN_NOT_DIAGNOSTIC: '업무규칙 컬럼 미등록',
+  BUSINESS_TARGET_COLUMN_METADATA_MISSING: '업무규칙 컬럼 메타정보 없음',
+  BUSINESS_TARGET_SCHEMA_EXCLUDED: '업무규칙 스키마 제외',
+  BUSINESS_TARGET_TABLE_EXCLUDED: '업무규칙 테이블 제외 충돌',
+  BUSINESS_TARGET_TABLE_PATTERN_EXCLUDED: '업무규칙 테이블명 제외 충돌',
+  BUSINESS_TARGET_COLUMN_EXCLUDED: '업무규칙 컬럼 제외 충돌',
+  BUSINESS_TARGET_COLUMN_MISSING: '업무규칙 대상 컬럼 미입력',
+};
+
+function relevantValidationIssues(report) {
+  return (report.issues || []).filter(issue =>
+    issue.code === 'WDQ_COLUMN_TOO_LONG'
+    || issue.code.startsWith('BUSINESS_TARGET_')
+    || issue.severity === 'ERROR');
+}
+
+function validationSummaryHtml(issues) {
+  const errors = issues.filter(issue => issue.severity === 'ERROR').length;
+  const warnings = issues.length - errors;
+  if (!issues.length) return `<div class="validation-summary-card ok">
+    <div class="validation-summary-icon">✓</div><div class="validation-summary-copy">
+      <strong>생성 기준 검증 완료</strong><span>WDQ 입력 오류와 업무규칙 진단대상 불일치가 없습니다.</span>
+    </div></div>`;
+  return `<div class="validation-summary-card">
+    <div class="validation-summary-icon">!</div><div class="validation-summary-copy">
+      <strong>검증 확인 필요 ${issues.length.toLocaleString()}건</strong>
+      <span>항목을 유형별로 모아 상세 팝업에서 확인할 수 있습니다.</span>
+    </div><div class="validation-summary-counts">
+      ${errors ? `<span class="validation-count error">오류 ${errors}</span>` : ''}
+      ${warnings ? `<span class="validation-count">확인 ${warnings}</span>` : ''}
+    </div><button type="button" class="secondary" data-open-validation>상세보기</button></div>`;
+}
+
+async function fetchProjectValidation(project, force = false) {
+  if (!force && activeValidationProject === project) return activeValidationIssues;
+  const report = await api(`/api/projects/${project}/validation`, { method: 'POST' });
+  activeValidationProject = project;
+  activeValidationIssues = relevantValidationIssues(report);
+  return activeValidationIssues;
+}
+
+async function renderResultValidation(project) {
+  const box = $('#result-validation-summary');
+  if (!box) return;
+  try { box.innerHTML = validationSummaryHtml(await fetchProjectValidation(project, true)); }
+  catch (error) { box.innerHTML = `<div class="message">${escapeHtml(error.message)}</div>`; }
+}
+
+async function renderDdlValidation() {
+  const project = Number($('#manage-project').value);
+  const box = $('#ddl-validation-result');
+  if (!project || project === ddlValidationProject) return;
+  ddlValidationProject = project;
+  try {
+    const issues = await fetchProjectValidation(project, true);
+    criteriaErrorKeys = new Set(issues.map(issue => issue.logicalKey).filter(Boolean));
+    box.hidden = false;
+    box.innerHTML = validationSummaryHtml(issues);
+    renderManagedCriteria();
+  } catch (error) {
+    ddlValidationProject = 0;
+    box.hidden = false;
+    box.innerHTML = `<div class="message">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function renderValidationDialog() {
+  const code = $('#validation-code-filter').value;
+  const keyword = $('#validation-search').value.trim().toLowerCase();
+  const issues = activeValidationIssues.filter(issue =>
+    (!code || issue.code === code)
+    && (!keyword || `${issue.message} ${issue.logicalKey || ''} ${issue.code}`.toLowerCase().includes(keyword)));
+  const groups = issues.reduce((result, issue) => {
+    if (!result.has(issue.code)) result.set(issue.code, []);
+    result.get(issue.code).push(issue);
+    return result;
+  }, new Map());
+  $('#validation-issue-list').innerHTML = issues.length ? [...groups.entries()].map(([issueCode, rows]) =>
+    `<section class="validation-issue-group"><div class="validation-issue-group-title">
+      <span>${escapeHtml(validationCodeLabels[issueCode] || issueCode)}</span><span>${rows.length}건</span></div>
+      ${rows.map(issue => `<div class="validation-issue-row">
+        <span class="validation-severity ${issue.severity === 'ERROR' ? 'error' : ''}">${issue.severity === 'ERROR' ? '오류' : '확인 필요'}</span>
+        <div><strong>${escapeHtml(issue.message)}</strong>${issue.logicalKey ? `<small>${escapeHtml(issue.logicalKey)}</small>` : ''}</div>
+        ${issue.logicalKey ? `<button type="button" class="secondary" data-edit-validation-key="${escapeHtml(issue.logicalKey)}">수정</button>` : ''}
+      </div>`).join('')}</section>`).join('')
+    : '<div class="validation-empty">조건에 맞는 검증 항목이 없습니다.</div>';
+}
+
+function openValidationDialog() {
+  const errors = activeValidationIssues.filter(issue => issue.severity === 'ERROR').length;
+  const codes = [...new Set(activeValidationIssues.map(issue => issue.code))].sort();
+  $('#validation-dialog-summary').innerHTML = `<span>전체 ${activeValidationIssues.length}건</span>
+    <span class="error">오류 ${errors}건</span><span class="warning">확인 필요 ${activeValidationIssues.length - errors}건</span>`;
+  $('#validation-code-filter').innerHTML = '<option value="">전체 유형</option>' + codes.map(code =>
+    `<option value="${escapeHtml(code)}">${escapeHtml(validationCodeLabels[code] || code)}</option>`).join('');
+  $('#validation-search').value = '';
+  renderValidationDialog();
+  $('#validation-dialog').showModal();
+}
+
+document.addEventListener('click', event => {
+  if (event.target.closest('[data-open-validation]')) openValidationDialog();
+});
+$('#validation-code-filter').addEventListener('change', renderValidationDialog);
+$('#validation-search').addEventListener('input', renderValidationDialog);
+$('#validation-issue-list').addEventListener('click', async event => {
+  const button = event.target.closest('[data-edit-validation-key]');
+  if (!button) return;
+  $('#validation-dialog').close();
+  showView('manage');
+  $('#manage-project').value = String(activeValidationProject);
+  setCurrentProject(activeValidationProject);
+  await loadManagedCriteria();
+  const item = managedCriteria.find(row => row.logicalKey === button.dataset.editValidationKey);
+  if (!item) return toast('수정할 진단기준을 현재 목록에서 찾을 수 없습니다.', true);
+  $('#criteria-type').value = item.dataType;
+  $('#criteria-search').value = item.logicalKey;
+  criteriaPage = 1;
+  renderManagedCriteria();
+  document.querySelector(`[data-edit-item="${item.id}"]`)?.click();
+});
+
+function renderCodeDataWarning() {
+  const box = $('#code-data-warning');
+  const valueRules = new Set(managedCriteria.filter(item => item.dataType === 'CODE_VALUE')
+    .map(item => String(item.values.ruleName || '').trim()).filter(Boolean));
+  const sqlRules = new Set(managedCriteria.filter(item => item.dataType === 'CODE_RULE'
+      && String(item.values.lookupSql || '').trim())
+    .map(item => String(item.values.ruleName || '').trim()).filter(Boolean));
+  const missing = [...new Set(managedCriteria.filter(item => item.dataType === 'COLUMN_MAPPING'
+      && String(item.values.ruleType || '').toUpperCase() === 'CODE')
+    .map(item => String(item.values.ruleName || item.values.codeRuleId || '').trim())
+    .filter(name => name && !valueRules.has(name) && !sqlRules.has(name)))];
+  box.hidden = missing.length === 0;
+  box.innerHTML = missing.length
+    ? `<div class="message warning"><strong>코드 데이터 미등록</strong><span>코드생성 SQL과 직접 등록 코드값이 모두 없는 규칙: ${missing.map(escapeHtml).join(', ')}</span><small>SQL 방식을 사용하거나 신규 추가 → 코드 데이터에서 코드값과 코드명을 등록하세요.</small></div>`
+    : '';
 }
 
 $('#criteria-list').addEventListener('click', event => {
+  const selection = event.target.closest('[data-select-criteria]');
+  if (selection) {
+    const id = Number(selection.dataset.selectCriteria);
+    if (selection.checked) selectedCriteriaIds.add(id); else selectedCriteriaIds.delete(id);
+    return renderManagedCriteria();
+  }
   const deleteButton = event.target.closest('[data-delete-item]');
   if (deleteButton) return deleteCriteria(Number(deleteButton.dataset.deleteItem));
   const button = event.target.closest('[data-edit-item]');
@@ -235,10 +716,79 @@ $('#criteria-list').addEventListener('click', event => {
   $('#criteria-dialog').showModal();
 });
 
+$('#criteria-select-filtered').addEventListener('change', event => {
+  const type = $('#criteria-type').value;
+  const validation = $('#criteria-validation-filter').value;
+  const keyword = $('#criteria-search').value.trim().toLowerCase();
+  const rows = managedCriteria.filter(item => (!type || item.dataType === type)
+    && (!validation || (validation === 'ERROR') === criteriaErrorKeys.has(item.logicalKey))
+    && (!keyword || item.logicalKey.toLowerCase().includes(keyword)
+      || JSON.stringify(item.values).toLowerCase().includes(keyword)));
+  for (const item of rows) {
+    if (event.target.checked) selectedCriteriaIds.add(item.id); else selectedCriteriaIds.delete(item.id);
+  }
+  renderManagedCriteria();
+});
+
+$('#criteria-bulk-button').addEventListener('click', () => {
+  const selected = managedCriteria.filter(item => selectedCriteriaIds.has(item.id));
+  if (!selected.length) return;
+  const fields = selected.map(item => Object.keys(item.values).filter(key => key !== 'wdqId'))
+    .reduce((common, keys) => common.filter(key => keys.includes(key)));
+  if (!fields.length) return toast('선택 항목에 공통으로 존재하는 수정 필드가 없습니다.', true);
+  $('#bulk-field').innerHTML = fields.map(field => `<option value="${escapeHtml(field)}">${escapeHtml(field)}</option>`).join('');
+  $('#bulk-selection-summary').textContent = `${selected.length.toLocaleString()}건을 일괄 수정합니다.`;
+  $('#bulk-mode').value = 'PREPEND';
+  $('#bulk-find').value = '';
+  $('#bulk-value').value = '';
+  $('#bulk-find-label').hidden = true;
+  $('#criteria-bulk-dialog').showModal();
+});
+
+$('#bulk-mode').addEventListener('change', event => {
+  $('#bulk-find-label').hidden = event.target.value !== 'REPLACE';
+});
+
+$('#apply-criteria-bulk').addEventListener('click', async event => {
+  const project = Number($('#manage-project').value);
+  const ids = [...selectedCriteriaIds];
+  if (!project || !ids.length) return;
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const result = await api(`/api/projects/${project}/criteria/bulk`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itemIds: ids, field: $('#bulk-field').value, mode: $('#bulk-mode').value,
+        find: $('#bulk-find').value, value: $('#bulk-value').value })
+    });
+    $('#criteria-bulk-dialog').close();
+    ddlValidationProject = 0;
+    await loadManagedCriteria();
+    await loadProjects();
+    toast(`${result.length.toLocaleString()}건을 일괄 수정했습니다.`);
+  } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; }
+});
+
 async function deleteCriteria(itemId) {
   const item = managedCriteria.find(row => row.id === itemId);
-  if (!item || !confirm(`이 진단기준을 삭제할까요?\n${item.logicalKey}`)) return;
+  if (!item) return;
   try {
+    const usage = await api(`/api/projects/${item.projectId}/criteria/${itemId}/usage`);
+    if (!usage.canDelete) {
+      const shown = usage.references.slice(0, 50);
+      $('#criteria-usage-title').textContent = item.values.ruleName || item.logicalKey;
+      $('#criteria-usage-count').innerHTML = `연결된 사용처 <strong>${usage.referenceCount.toLocaleString()}건</strong>`;
+      $('#criteria-usage-list').innerHTML = shown.map(ref => `<div class="criteria-usage-row">
+        <span class="criteria-usage-relation">${escapeHtml(ref.relation)}</span>
+        <div class="criteria-usage-location">${escapeHtml(ref.location)}
+          <small>${escapeHtml(ref.dataType)}</small></div></div>`).join('')
+        + (usage.referenceCount > shown.length
+          ? `<div class="criteria-usage-more">외 ${(usage.referenceCount - shown.length).toLocaleString()}건의 사용처가 있습니다.</div>` : '');
+      $('#criteria-usage-dialog').showModal();
+      return;
+    }
+    if (!confirm(`이 진단기준을 삭제할까요?\n${item.logicalKey}`)) return;
     await api(`/api/projects/${item.projectId}/criteria/${itemId}`, { method: 'DELETE' });
     await loadManagedCriteria(); await loadProjects(); toast('진단기준을 삭제했습니다.');
   } catch (error) { toast(error.message, true); }
@@ -247,23 +797,66 @@ async function deleteCriteria(itemId) {
 const criteriaTemplates = {
   EXCLUSION: ['dbmsOriginal','schemaOriginal','tableOriginal','columnOriginal','exclusionType','reason'],
   VERIFICATION_RULE: ['ruleName','expression','qualityIndicator'],
-  CODE_RULE: ['ruleName','lookupSql','description'],
+  CODE_RULE: ['ruleName','codeType','lookupSql','description','exclusiveYn'],
+  CODE_VALUE: ['ruleName','codeId','codeName','exclusiveYn'],
   COLUMN_MAPPING: ['dbmsOriginal','schemaOriginal','tableOriginal','columnOriginal','ruleType','ruleName'],
   BUSINESS_RULE: ['ruleName','dbmsOriginal','schemaOriginal','tableOriginal','columnOriginal','ruleSql','countSql','ruleKind']
 };
 
 function renderNewCriteriaFields() {
-  const keys = criteriaTemplates[$('#new-criteria-type').value] || [];
-  $('#new-criteria-fields').innerHTML = keys.map(key => `<label>${key}${/sql|expression/i.test(key) ? `<textarea data-new-key="${key}"></textarea>` : `<input data-new-key="${key}">`}</label>`).join('');
+  const type = $('#new-criteria-type').value;
+  const keys = criteriaTemplates[type] || [];
+  const codeRules = managedCriteria.filter(item => item.dataType === 'CODE_RULE')
+    .map(item => item.values.ruleName).filter(Boolean);
+  $('#new-criteria-fields').innerHTML = keys.map(key => {
+    if (type === 'CODE_VALUE' && key === 'ruleName')
+      return `<label>코드규칙<select data-new-key="${key}"><option value="">선택</option>${codeRules.map(name =>
+        `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')}</select></label>`;
+    if (type === 'CODE_RULE' && key === 'codeType')
+      return `<label>코드유형<select data-new-key="${key}"><option value="공통코드">공통코드 (CC)</option><option value="목록성코드">목록성코드 (LC)</option></select></label>`;
+    if (key === 'exclusiveYn')
+      return `<label>제외 여부<select data-new-key="${key}"><option value="Y">Y</option><option value="N">N</option></select></label>`;
+    return `<label>${key}${/sql|expression/i.test(key) ? `<textarea data-new-key="${key}"></textarea>` : `<input data-new-key="${key}">`}</label>`;
+  }).join('');
 }
 $('#new-criteria-type').addEventListener('change', renderNewCriteriaFields);
 $('#criteria-create-button').addEventListener('click', () => {
   if (!$('#manage-project').value) return toast('프로젝트를 먼저 선택하세요.', true);
   $('#new-criteria-key').value = ''; renderNewCriteriaFields(); $('#criteria-create-dialog').showModal();
 });
+$('#code-value-excel-button').addEventListener('click', () => {
+  if (!$('#manage-project').value) return toast('프로젝트를 먼저 선택하세요.', true);
+  const rules = managedCriteria.filter(item => item.dataType === 'CODE_RULE'
+    && ['LC', '목록성코드'].includes(String(item.values.codeType || '').trim()));
+  if (!rules.length) return toast('업로드할 목록성코드(LC) 규칙이 없습니다.', true);
+  $('#code-value-rule').innerHTML = rules.map(item =>
+    `<option value="${escapeHtml(item.values.ruleName)}">${escapeHtml(item.values.ruleName)}</option>`).join('');
+  $('#code-value-excel-form').reset();
+  $('#code-value-excel-dialog').showModal();
+});
+$('#code-value-excel-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const project = Number($('#manage-project').value);
+  const button = event.currentTarget.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const result = await api(`/api/projects/${project}/criteria/code-values/import`, {
+      method: 'POST', body: new FormData(event.currentTarget)
+    });
+    $('#code-value-excel-dialog').close();
+    await loadManagedCriteria(); await loadProjects();
+    toast(`${result.ruleName} 코드 데이터 ${Number(result.importedCount).toLocaleString()}건을 등록했습니다.`);
+  } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; }
+});
 $('#create-criteria').addEventListener('click', async () => {
-  const project = Number($('#manage-project').value); const logicalKey = $('#new-criteria-key').value.trim();
+  const project = Number($('#manage-project').value);
   const values = Object.fromEntries([...document.querySelectorAll('[data-new-key]')].map(input => [input.dataset.newKey, input.value]));
+  const type = $('#new-criteria-type').value;
+  const logicalKey = $('#new-criteria-key').value.trim()
+    || (type === 'CODE_VALUE' ? `${values.ruleName || ''}|${values.codeId || ''}` : '');
+  if (type === 'CODE_VALUE' && (!values.ruleName || !values.codeId))
+    return toast('코드규칙과 코드값을 입력하세요.', true);
   const button = $('#create-criteria'); button.disabled = true;
   try {
     await api(`/api/projects/${project}/criteria`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -293,70 +886,29 @@ $('#save-criteria').addEventListener('click', async () => {
     await api(`/api/projects/${editingCriteria.projectId}/criteria/${editingCriteria.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values })
     });
-    $('#criteria-dialog').close(); await loadManagedCriteria(); await loadProjects();
-    toast('진단기준을 수정했습니다. 프로젝트 승인은 재검토 상태로 변경되었습니다.');
+    $('#criteria-dialog').close(); ddlValidationProject = 0; await loadManagedCriteria(); await loadProjects();
+    if (projectId === editingCriteria.projectId) {
+      const refreshed = await api(`/api/projects/${projectId}`);
+      renderProject(refreshed);
+      setArtifactLinks(projectId);
+    }
+    toast('진단기준을 수정했습니다.');
   } catch (error) { toast(error.message, true); }
   finally { button.disabled = false; }
 });
 
 function setArtifactLinks(id) {
   $('#workbook-download').href = `/api/projects/${id}/artifacts/workbook`;
+  $('#ddl-download').href = `/api/projects/${id}/artifacts/ddl`;
+  $('#combined-sql-download').href = `/api/projects/${id}/artifacts/combined-sql`;
   $('#sql-download').href = `/api/projects/${id}/artifacts/sql`;
   $('#exe-download').href = `/api/projects/${id}/artifacts/exe`;
   $('#delete-exe-download').href = `/api/projects/${id}/artifacts/delete-exe`;
 }
 
-$('#report-file').addEventListener('change', event => {
-  $('#report-file-name').textContent = event.target.files[0]?.name || '';
+$('#existing-report-file').addEventListener('change', event => {
+  $('#existing-report-file-name').textContent = event.target.files[0]?.name || '';
 });
-$('#criteria-files').addEventListener('change', event => {
-  $('#criteria-file-name').textContent = `${event.target.files.length}개 파일 선택됨`;
-});
-
-$('#report-form').addEventListener('submit', async event => {
-  event.preventDefault();
-  const button = event.currentTarget.querySelector('button');
-  setLoading(button, true, '결과보고서에서 추출 <span>→</span>');
-  try {
-    const result = await api('/api/projects/from-result-report', { method: 'POST', body: new FormData(event.currentTarget) });
-    completeImport(result, '결과보고서 추출');
-  } catch (error) { toast(error.message, true); }
-  finally { setLoading(button, false, '결과보고서에서 추출 <span>→</span>'); }
-});
-
-$('#criteria-form').addEventListener('submit', async event => {
-  event.preventDefault();
-  const button = event.currentTarget.querySelector('button');
-  setLoading(button, true, '진단기준 직접 등록 <span>→</span>');
-  try {
-    const result = await api('/api/projects/from-criteria', { method: 'POST', body: new FormData(event.currentTarget) });
-    completeImport(result, '진단기준 직접 등록');
-  } catch (error) { toast(error.message, true); }
-  finally { setLoading(button, false, '진단기준 직접 등록 <span>→</span>'); }
-});
-
-function completeImport(result, trackLabel) {
-  projectId = result.project.projectId;
-  const metadata = result.metadata;
-  $('#metadata').innerHTML = [
-    ['입력 경로', trackLabel], ['프로젝트', `#${projectId} · ${result.project.systemCode} · v${result.project.revision}`],
-    ['시스템', metadata?.systemName || '직접 입력'], ['WISE DQ', metadata?.reportVersion ? `V${metadata.reportVersion}` : '9.0~9.2']
-  ].map(([label, value]) => `<div><small>${label}</small><strong>${escapeHtml(value)}</strong></div>`).join('');
-  renderImportSummary(result.importResult);
-  renderConflicts([]);
-  $('#result-panel').classList.remove('locked');
-  $('#step-1').classList.remove('active');
-  $('#step-2').classList.add('active');
-  setArtifactLinks(projectId);
-  api(`/api/projects/${projectId}`).then(project => renderConflicts(project.conflicts)).catch(() => {});
-  toast(`${trackLabel}이 완료되었습니다.`);
-  loadProjects();
-  $('#result-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function renderImportSummary(result) {
-  renderSummary(result.criteriaSummary, result.conflictCount, result.errors);
-}
 
 function renderProject(project) {
   const summary = { verificationRuleCount: 0, businessRuleCount: 0, tableExclusionCount: 0,
@@ -421,29 +973,6 @@ $('#conflicts').addEventListener('click', async event => {
   } catch (error) { button.disabled = false; toast(error.message, true); }
 });
 
-$('#approve-button').addEventListener('click', async () => {
-  if (!projectId) return;
-  const button = $('#approve-button');
-  const approverName = $('#approver-name').value.trim();
-  if (!approverName) return toast('승인 담당자 이름을 입력하세요.', true);
-  button.disabled = true;
-  try {
-    const validation = await api(`/api/projects/${projectId}/validation`, { method: 'POST' });
-    const errors = validation.issues.filter(issue => issue.severity === 'ERROR');
-    if (validation.issues.length) $('#messages').innerHTML = validation.issues.map(issue =>
-      `<div class="message${issue.severity === 'ERROR' ? '' : ' ok'}">${escapeHtml(issue.message)}</div>`).join('');
-    if (errors.length) throw new Error(`승인 차단 오류가 ${errors.length}건 있습니다.`);
-    const project = await api(`/api/projects/${projectId}/approval`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approverName })
-    });
-    renderProject(project);
-    for (const id of ['workbook-download', 'sql-download', 'exe-download', 'delete-exe-download']) $(`#${id}`).classList.remove('disabled');
-    $('#step-2').classList.remove('active'); $('#step-3').classList.add('active');
-    button.textContent = '승인 완료';
-    toast('검증과 승인이 완료됐습니다.');
-  } catch (error) { button.disabled = false; toast(error.message, true); }
-});
-
 for (const zone of document.querySelectorAll('.dropzone')) {
   zone.addEventListener('dragover', event => { event.preventDefault(); zone.classList.add('drag'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
@@ -451,3 +980,93 @@ for (const zone of document.querySelectorAll('.dropzone')) {
 }
 
 loadProjects();
+async function loadSystems() {
+  systemRows = await api('/api/systems');
+  const body = $('#system-list');
+  if (body) body.innerHTML = systemRows.length ? systemRows.map(s => `<tr><td class="project-system"><strong>${escapeHtml(s.systemName)}</strong><small>${escapeHtml(s.systemCode)}</small></td><td>${escapeHtml(s.dbmsType)} · ${escapeHtml(s.dbmsPhysicalName)}</td><td>${escapeHtml(s.defaultSchema)}</td><td>${escapeHtml(s.wdqNamespace || '미설정')}</td><td>${s.projectCount}</td><td>${s.active ? '사용' : '미사용'}</td><td class="row-actions"><button class="project-open" data-system-open="${s.id}">열기</button><button class="project-open" data-system-edit="${s.id}">수정</button><button class="project-open danger-button" data-system-delete="${s.id}">삭제</button></td></tr>`).join('') : '<tr><td colspan="7" class="project-empty">등록된 시스템이 없습니다. 시스템 등록부터 시작하세요.</td></tr>';
+  const select = $('#id-system-select');
+  if (select) {
+    const old = select.value;
+    select.innerHTML = '<option value="">시스템 선택</option>' + systemRows.map(s => `<option value="${s.id}">${escapeHtml(s.systemName)} · ${escapeHtml(s.systemCode)}</option>`).join('');
+    if (systemRows.some(s => String(s.id) === old)) select.value = old;
+  }
+  return systemRows;
+}
+
+$('#refresh-systems')?.addEventListener('click', loadSystems);
+$('#system-list')?.addEventListener('click', event => {
+  const deleteButton=event.target.closest('[data-system-delete]');
+  if(deleteButton){deleteSystem(Number(deleteButton.dataset.systemDelete),deleteButton);return;}
+  const openButton=event.target.closest('[data-system-open]'); if(openButton){openSystemWorkspace(Number(openButton.dataset.systemOpen));return;}
+  const button = event.target.closest('[data-system-edit]'); if (!button) return;
+  const system = systemRows.find(s => s.id === Number(button.dataset.systemEdit));
+  const fields = $('#system-edit-fields'); fields.dataset.systemId = system.id; fields.dataset.mode='edit';
+  for (const key of SYSTEM_FIELDS) fields.querySelector(`[name="${key}"]`).value = system[key] ?? '';
+  $('#system-dialog').showModal();
+});
+async function deleteSystem(id,button){
+  const system=systemRows.find(row=>row.id===id);if(!system)return;
+  if(!confirm(`${system.systemName} 시스템을 삭제하시겠습니까?\\n\\n등록된 프로젝트가 있으면 삭제되지 않습니다.`))return;
+  button.disabled=true;
+  try{await api(`/api/systems/${id}`,{method:'DELETE'});if(selectedSystemId===id){selectedSystemId=null;$('#system-workspace').classList.add('locked');history.replaceState(null,'','#/systems');}await loadSystems();toast(`${system.systemName} 시스템을 삭제했습니다.`);}
+  catch(error){button.disabled=false;toast(error.message,true);}
+}
+$('#create-system-button')?.addEventListener('click',()=>{const fields=$('#system-edit-fields');fields.dataset.mode='create';delete fields.dataset.systemId;for(const input of fields.querySelectorAll('[name]')) input.value=input.name==='active'?'true':input.name==='criteriaPrefix'?'[{year}표준시스템DB {systemName}]':'';$('#system-dialog').showModal();});
+$('#save-system')?.addEventListener('click', async () => {
+  const fields=$('#system-edit-fields'), id=fields.dataset.systemId, creating=fields.dataset.mode==='create';
+  const values=Object.fromEntries([...fields.querySelectorAll('[name]')].map(x=>[x.name,x.value])); values.active=values.active==='true';
+  try { const saved=await api(creating?'/api/systems':`/api/systems/${id}`,{method:creating?'POST':'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)}); $('#system-dialog').close(); await loadSystems(); await openSystemWorkspace(saved.id); toast(creating?'공통표준 시스템을 등록했습니다.':'시스템 정보를 저장했습니다.'); } catch(e){toast(e.message,true);}
+});
+
+async function openSystemWorkspace(id, route = true){
+  selectedSystemId=id; if(!projectRows.length) await loadProjects();
+  showView('systems', false);
+  if (route) updateRoute(`#/systems/${id}`);
+  const system=systemRows.find(s=>s.id===id); $('#system-workspace').classList.remove('locked'); $('#workspace-system-name').textContent=system.systemName;
+  const policyNote=$('#system-workspace [data-workspace-pane="policy"] .manager-note');
+  if(policyNote) policyNote.textContent=`현재 ${system.wdqNamespace}번 채번 영역입니다. 일반 ID는 접두어 뒤 숫자가 ${system.wdqNamespace}로 시작하고, DB 연결 ID는 영역 번호를 8자리로 채웁니다.`;
+  const policies=await api(`/api/systems/${id}/id-policies`);
+  $('#workspace-policy-list').innerHTML=policies.map(p=>`<tr><td><strong>${p.idType}</strong></td><td><input class="table-input" data-prefix value="${escapeHtml(p.idPrefix)}"></td><td><input class="table-input small" type="number" data-width value="${p.numberWidth}"></td><td><input class="table-input" type="number" data-last value="${p.lastValue}"></td><td><code>${escapeHtml(policyExample(p,system.wdqNamespace))}</code></td><td><button class="project-open" data-workspace-policy-save="${p.idType}">저장</button></td></tr>`).join('');
+  const rows=projectRows.filter(p=>p.systemCode===system.systemCode);
+  $('#workspace-project-list').innerHTML=rows.length?rows.map(p=>`<tr><td>v${p.revision}</td><td>${p.targetYear} / ${p.deploymentYearMonth}</td><td>${statusLabels[p.status]||p.status}</td><td>${p.itemCount.toLocaleString()}건</td><td class="row-actions"><button class="project-open" data-workspace-project="${p.projectId}">파일 등록·산출물</button><button class="project-open danger-button" data-delete-project="${p.projectId}">삭제</button></td></tr>`).join(''):'<tr><td colspan="5" class="project-empty">프로젝트가 없습니다.</td></tr>';
+  $('#workspace-output-list').innerHTML=rows.length?rows.map(p=>`<div class="summary-card"><small>v${p.revision} · ${p.deploymentYearMonth}</small><strong>${statusLabels[p.status]||p.status}</strong></div>`).join(''):'<div class="project-empty">생성된 산출물이 없습니다.</div>';
+  $('#system-workspace').scrollIntoView({behavior:'smooth',block:'start'});
+}
+$('#workspace-system-edit')?.addEventListener('click',()=>{const s=systemRows.find(x=>x.id===selectedSystemId);if(!s)return;const fields=$('#system-edit-fields');fields.dataset.systemId=s.id;fields.dataset.mode='edit';for(const key of SYSTEM_FIELDS)fields.querySelector(`[name="${key}"]`).value=s[key]??'';$('#system-dialog').showModal();});
+document.querySelector('.workspace-tabs')?.addEventListener('click',e=>{const b=e.target.closest('[data-workspace-tab]');if(!b)return;document.querySelectorAll('[data-workspace-tab]').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('[data-workspace-pane]').forEach(x=>x.classList.toggle('active',x.dataset.workspacePane===b.dataset.workspaceTab));});
+$('#workspace-policy-list')?.addEventListener('click',async e=>{const b=e.target.closest('[data-workspace-policy-save]');if(!b)return;const row=b.closest('tr');try{await api(`/api/systems/${selectedSystemId}/id-policies/${b.dataset.workspacePolicySave}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({idPrefix:row.querySelector('[data-prefix]').value,numberWidth:Number(row.querySelector('[data-width]').value),lastValue:Number(row.querySelector('[data-last]').value),active:true})});await openSystemWorkspace(selectedSystemId);toast('채번 정책을 저장했습니다.');}catch(err){toast(err.message,true);}});
+$('#workspace-project-form')?.addEventListener('submit',async e=>{e.preventDefault();if(!selectedSystemId)return;const values=Object.fromEntries(new FormData(e.currentTarget));values.targetYear=Number(values.targetYear);try{const created=await api(`/api/systems/${selectedSystemId}/projects`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)});await loadProjects();await openSystemWorkspace(selectedSystemId);toast(`프로젝트 #${created.projectId}를 생성했습니다.`);}catch(err){toast(err.message,true);}});
+$('#workspace-project-list')?.addEventListener('click',e=>{const deleteButton=e.target.closest('[data-delete-project]');if(deleteButton){deleteProject(Number(deleteButton.dataset.deleteProject),deleteButton);return;}const b=e.target.closest('[data-workspace-project]');if(b)openProject(Number(b.dataset.workspaceProject));});
+
+function policyExample(policy, namespace) {
+  const next=policy.lastValue+1, ns=namespace||'';
+  if(policy.idType==='DB_CONNECTION' && ns) return policy.idPrefix+String(ns).padStart(policy.numberWidth,'0');
+  return policy.idPrefix+ns+String(next).padStart(Math.max(1,policy.numberWidth-ns.length),'0');
+}
+async function loadIdPolicies(){
+  const systemId=Number($('#id-system-select')?.value); if(!systemId){if($('#id-policy-list')) $('#id-policy-list').innerHTML='<tr><td colspan="7" class="project-empty">시스템을 선택하세요.</td></tr>';return;}
+  const policies=await api(`/api/systems/${systemId}/id-policies`), system=systemRows.find(s=>s.id===systemId), keyword=$('#id-search').value.toLowerCase();
+  $('#id-policy-list').innerHTML=policies.filter(p=>p.idType.toLowerCase().includes(keyword)).map(p=>`<tr><td><strong>${p.idType}</strong></td><td><input class="table-input" data-prefix value="${escapeHtml(p.idPrefix)}"></td><td><input class="table-input small" type="number" data-width value="${p.numberWidth}"></td><td><input class="table-input" type="number" data-last value="${p.lastValue}"></td><td><code>${escapeHtml(policyExample(p,system.wdqNamespace))}</code></td><td>${p.active?'사용':'중지'}</td><td><button class="project-open" data-policy-save="${p.idType}">저장</button></td></tr>`).join('');
+}
+$('#id-system-select')?.addEventListener('change',loadIdPolicies); $('#id-search')?.addEventListener('input',loadIdPolicies);
+$('#id-policy-list')?.addEventListener('click',async event=>{const b=event.target.closest('[data-policy-save]');if(!b)return;const row=b.closest('tr'),systemId=$('#id-system-select').value;try{await api(`/api/systems/${systemId}/id-policies/${b.dataset.policySave}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({idPrefix:row.querySelector('[data-prefix]').value,numberWidth:Number(row.querySelector('[data-width]').value),lastValue:Number(row.querySelector('[data-last]').value),active:true})});await loadIdPolicies();toast('채번 정책을 저장했습니다.');}catch(e){toast(e.message,true);}});
+
+async function loadArtifactHistory(){
+  const id=Number($('#artifact-project-select')?.value); if(!id){if($('#artifact-history-list'))$('#artifact-history-list').innerHTML='<tr><td colspan="5" class="project-empty">프로젝트를 선택하세요.</td></tr>';return;}
+  try{const rows=await api(`/api/projects/${id}/artifacts/history`);$('#artifact-history-list').innerHTML=rows.length?rows.map(x=>`<tr><td>${new Date(x.createdAt).toLocaleString('ko-KR')}</td><td>${escapeHtml(x.artifactKind)}</td><td>${escapeHtml(x.fileName)}</td><td>${Number(x.byteSize).toLocaleString()} B</td><td><code title="${x.sha256}">${x.sha256.slice(0,16)}…</code></td></tr>`).join(''):'<tr><td colspan="5" class="project-empty">생성 이력이 없습니다.</td></tr>';}catch(e){toast(e.message,true);}
+}
+$('#artifact-project-select')?.addEventListener('change',event=>{setCurrentProject(event.target.value);loadArtifactHistory();});
+async function restoreRoute() {
+  const route = window.location.hash || '#/systems';
+  const projectMatch = route.match(/^#\/(?:results|projects)\/(\d+)$/);
+  const systemMatch = route.match(/^#\/systems\/(\d+)$/);
+  await loadSystems();
+  await loadProjects();
+  if (projectMatch) return openProject(Number(projectMatch[1]), false);
+  if (systemMatch) return openSystemWorkspace(Number(systemMatch[1]), false);
+  const view = Object.entries(VIEW_ROUTES).find(([, hash]) => hash === route)?.[0] || 'systems';
+  showView(view, false);
+  if (!window.location.hash) history.replaceState(null, '', VIEW_ROUTES.systems);
+}
+window.addEventListener('popstate', () => restoreRoute().catch(error => toast(error.message, true)));
+restoreRoute().catch(error => toast(error.message, true));

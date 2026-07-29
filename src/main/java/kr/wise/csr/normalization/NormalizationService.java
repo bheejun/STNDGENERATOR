@@ -36,6 +36,16 @@ public class NormalizationService {
                 } else if (existing.fingerprint().equals(fingerprint)) {
                     List<SourceReference> sources = new ArrayList<>(existing.sources()); sources.add(source);
                     rows.put(mergeKey, new NormalizedRow(existing.dataType(), existing.logicalKey(), existing.values(), List.copyOf(sources), fingerprint));
+                } else if (sourcePriority(batch.workbookType()) != sourcePriority(existing.sources().getFirst().workbookType())) {
+                    List<SourceReference> sources = new ArrayList<>(existing.sources());
+                    sources.add(source);
+                    if (sourcePriority(batch.workbookType()) > sourcePriority(existing.sources().getFirst().workbookType())) {
+                        rows.put(mergeKey, new NormalizedRow(candidate.dataType(), candidate.logicalKey(),
+                                Map.copyOf(candidate.values()), List.copyOf(sources), fingerprint));
+                    } else {
+                        rows.put(mergeKey, new NormalizedRow(existing.dataType(), existing.logicalKey(),
+                                existing.values(), List.copyOf(sources), existing.fingerprint()));
+                    }
                 } else {
                     conflicts.add(new DataConflict(conflictIds.getAndIncrement(), existing.dataType(), existing.logicalKey(),
                             existing.values(), existing.sources().getFirst().workbookType(), Map.copyOf(candidate.values()),
@@ -44,6 +54,12 @@ public class NormalizationService {
             }
         }
         return new NormalizationSummary(projectId, List.copyOf(rows.values()), List.copyOf(conflicts), pt01, pt02, List.copyOf(errors));
+    }
+
+    private int sourcePriority(kr.wise.csr.importfile.WorkbookType type) {
+        if (type == kr.wise.csr.importfile.WorkbookType.WISEDQ_RESULT) return 0;
+        if (type == kr.wise.csr.importfile.WorkbookType.WDQ_CRITERIA) return 1;
+        return 2;
     }
 
     public static String fingerprint(Map<String, String> values) {

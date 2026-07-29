@@ -36,6 +36,10 @@ public class ProjectNormalizationService {
 
         List<NormalizedRow> assigned = new ArrayList<>();
         for (NormalizedRow row : merged.rows()) {
+            if (row.dataType().equals("CODE_VALUE")) {
+                assigned.add(row);
+                continue;
+            }
             if (conflicted.contains(conflictKey(row.dataType(), row.logicalKey()))) {
                 assigned.add(row);
                 continue;
@@ -45,6 +49,10 @@ public class ProjectNormalizationService {
             String existing = values.get("wdqId");
             if (existing == null || existing.isBlank()) {
                 values.put("wdqId", ids.allocate(type, systemId, row.logicalKey(), projectId));
+            } else if (row.dataType().equals("VERIFICATION_RULE")
+                    && (existing.toUpperCase(java.util.Locale.ROOT).startsWith("STAT_")
+                            || existing.toUpperCase(java.util.Locale.ROOT).startsWith("VRF1_"))) {
+                // WDQ built-in verification rules are referenced as-is and are not system-owned IDs.
             } else {
                 ids.registerExisting(type, systemId, row.logicalKey(), existing, projectId);
             }
@@ -53,6 +61,7 @@ public class ProjectNormalizationService {
         }
         NormalizationSummary result = new NormalizationSummary(projectId, List.copyOf(assigned), merged.conflicts(),
                 merged.excludedPt01Count(), merged.excludedPt02Count(), merged.importErrors());
+        result = snapshots.applyOverrides(result);
         snapshots.save(result);
         return result;
     }
@@ -64,7 +73,7 @@ public class ProjectNormalizationService {
     private WdqIdType idType(String dataType) {
         return switch (dataType) {
             case "SYSTEM" -> WdqIdType.DB_CONNECTION;
-            case "EXCLUSION" -> WdqIdType.EXCLUSION;
+            case "EXCLUSION", "EXCLUSION_PATTERN" -> WdqIdType.EXCLUSION;
             case "VERIFICATION_RULE" -> WdqIdType.VERIFICATION_RULE;
             case "CODE_RULE" -> WdqIdType.CODE_RULE;
             case "COLUMN_MAPPING" -> WdqIdType.COLUMN_MAPPING;

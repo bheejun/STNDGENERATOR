@@ -60,6 +60,8 @@ public class WorkbookDetector {
                 return WorkbookType.CRITERIA_DOMAIN_MAPPING;
             if (hasHeaders(sheet, "업무규칙명", "DBMS명", "스키마명", "테이블명", "건수SQL", "분석SQL"))
                 return WorkbookType.CRITERIA_BUSINESS_RULE;
+            if (hasHeaders(sheet, "DBMS명", "스키마명", "포함관계", "제외기준룰", "제외사유"))
+                return WorkbookType.CRITERIA_EXCLUSION_PATTERN;
             if (hasHeaders(sheet, "DBMS명", "스키마명", "테이블명", "테이블한글명", "제외여부", "제외사유"))
                 return WorkbookType.CRITERIA_TABLE_EXCLUSION;
             if (hasHeaders(sheet, "DBMS명", "스키마명", "테이블명", "컬럼명", "제외여부", "제외사유"))
