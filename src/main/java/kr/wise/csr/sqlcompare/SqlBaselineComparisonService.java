@@ -10,6 +10,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -64,13 +65,7 @@ public class SqlBaselineComparisonService {
 
     public SqlComparisonResult compare(long projectId) {
         ProjectSnapshot project = requireProject(projectId);
-        List<Baseline> rows = jdbc.query("""
-                select original_name,stored_path,uploaded_at
-                from sql_baseline where project_id=?
-                """, (rs, rowNum) -> new Baseline(rs.getString(1), rs.getString(2),
-                        rs.getObject(3, OffsetDateTime.class)), projectId);
-        if (rows.isEmpty()) throw new SqlBaselineNotFoundException(projectId);
-        Baseline baseline = rows.getFirst();
+        Baseline baseline = baseline(projectId);
         try {
             byte[] baselineBytes = storage.load(baseline.storedPath()).getInputStream().readAllBytes();
             String currentSql = new String(exporter.export(project).content(), StandardCharsets.UTF_8);
@@ -79,6 +74,36 @@ public class SqlBaselineComparisonService {
         } catch (IOException e) {
             throw new IllegalStateException("2025 기준 SQL 파일을 읽지 못했습니다.", e);
         }
+    }
+
+    public SqlBaselineInfo info(long projectId) {
+        requireProject(projectId);
+        Baseline baseline = baseline(projectId);
+        return new SqlBaselineInfo(projectId, baseline.originalName(), baseline.sha256(),
+                baseline.byteSize(), baseline.uploadedAt());
+    }
+
+    public BaselineDownload download(long projectId) {
+        requireProject(projectId);
+        Baseline baseline = baseline(projectId);
+        return new BaselineDownload(baseline.originalName(), baseline.byteSize(), storage.load(baseline.storedPath()));
+    }
+
+    @Transactional
+    public void delete(long projectId) {
+        requireProject(projectId);
+        if (jdbc.update("delete from sql_baseline where project_id=?", projectId) == 0)
+            throw new SqlBaselineNotFoundException(projectId);
+    }
+
+    private Baseline baseline(long projectId) {
+        List<Baseline> rows = jdbc.query("""
+                select original_name,stored_path,sha256,byte_size,uploaded_at
+                from sql_baseline where project_id=?
+                """, (rs, rowNum) -> new Baseline(rs.getString(1), rs.getString(2), rs.getString(3),
+                        rs.getLong(4), rs.getObject(5, OffsetDateTime.class)), projectId);
+        if (rows.isEmpty()) throw new SqlBaselineNotFoundException(projectId);
+        return rows.getFirst();
     }
 
     private ProjectSnapshot requireProject(long projectId) {
@@ -98,6 +123,10 @@ public class SqlBaselineComparisonService {
         return value.startsWith("\uFEFF") ? value.substring(1) : value;
     }
 
-    private record Baseline(String originalName, String storedPath, OffsetDateTime uploadedAt) {
+    private record Baseline(String originalName, String storedPath, String sha256, long byteSize,
+            OffsetDateTime uploadedAt) {
+    }
+
+    public record BaselineDownload(String originalName, long byteSize, Resource resource) {
     }
 }

@@ -1101,9 +1101,22 @@ function renderSqlComparison(result) {
   }).join('');
 }
 
+function renderSqlBaselineAsset(info) {
+  const box = $('#sql-baseline-asset');
+  if (!info) {
+    box.className = 'sql-baseline-asset empty';
+    box.innerHTML = '<div><strong>등록된 2025 기준 SQL 없음</strong><small>선택한 프로젝트 전용 파일로 서버에 저장됩니다.</small></div>';
+    return;
+  }
+  box.className = 'sql-baseline-asset';
+  box.innerHTML = `<div><strong>${escapeHtml(info.originalName)}</strong><small>${Number(info.byteSize).toLocaleString()} B · ${new Date(info.uploadedAt).toLocaleString('ko-KR')} · SHA-256 ${escapeHtml(info.sha256.slice(0, 16))}…</small></div>
+    <div class="sql-baseline-actions"><a href="/api/projects/${info.projectId}/sql-comparison/baseline/file">다운로드</a><button type="button" class="delete" data-delete-sql-baseline="${info.projectId}">삭제</button></div>`;
+}
+
 async function loadSqlComparison() {
   const id = Number($('#sql-comparison-project')?.value || projectId);
   if (!id) {
+    renderSqlBaselineAsset(null);
     $('#sql-comparison-result').hidden = true;
     $('#sql-comparison-empty').hidden = false;
     $('#sql-comparison-empty').textContent = '프로젝트를 선택하고 2025년 SQL을 등록해주세요.';
@@ -1111,13 +1124,22 @@ async function loadSqlComparison() {
   }
   setCurrentProject(id);
   try {
-    renderSqlComparison(await api(`/api/projects/${id}/sql-comparison`));
+    renderSqlBaselineAsset(await api(`/api/projects/${id}/sql-comparison/baseline`));
   } catch (error) {
+    renderSqlBaselineAsset(null);
     $('#sql-comparison-result').hidden = true;
     $('#sql-comparison-empty').hidden = false;
     $('#sql-comparison-empty').textContent = error.status === 404
       ? '등록된 2025 기준 SQL이 없습니다. SQL 파일을 업로드하면 즉시 비교합니다.'
       : error.message;
+    return;
+  }
+  try {
+    renderSqlComparison(await api(`/api/projects/${id}/sql-comparison`));
+  } catch (error) {
+    $('#sql-comparison-result').hidden = true;
+    $('#sql-comparison-empty').hidden = false;
+    $('#sql-comparison-empty').textContent = error.message;
   }
 }
 
@@ -1140,11 +1162,32 @@ $('#sql-baseline-form')?.addEventListener('submit', async event => {
     const form = new FormData();
     form.append('file', file);
     renderSqlComparison(await api(`/api/projects/${id}/sql-comparison/baseline`, { method: 'POST', body: form }));
-    toast('2025 기준 SQL을 등록하고 현재 SQL과 비교했습니다.');
+    renderSqlBaselineAsset(await api(`/api/projects/${id}/sql-comparison/baseline`));
+    toast('2025 기준 SQL을 프로젝트 서버 파일로 저장하고 현재 SQL과 비교했습니다.');
   } catch (error) {
     toast(error.message, true);
   } finally {
     button.disabled = false;
+  }
+});
+$('#sql-baseline-asset')?.addEventListener('click', async event => {
+  const button = event.target.closest('[data-delete-sql-baseline]');
+  if (!button) return;
+  const id = Number(button.dataset.deleteSqlBaseline);
+  if (!confirm('이 프로젝트에 저장된 2025 기준 SQL을 삭제하시겠습니까?\\n비교 결과도 더 이상 표시되지 않습니다.')) return;
+  button.disabled = true;
+  try {
+    await api(`/api/projects/${id}/sql-comparison/baseline`, { method: 'DELETE' });
+    $('#sql-baseline-file').value = '';
+    $('#sql-baseline-file-name').textContent = '2025 SQL 파일 선택';
+    renderSqlBaselineAsset(null);
+    $('#sql-comparison-result').hidden = true;
+    $('#sql-comparison-empty').hidden = false;
+    $('#sql-comparison-empty').textContent = '등록된 2025 기준 SQL이 없습니다. SQL 파일을 업로드하면 즉시 비교합니다.';
+    toast('프로젝트의 2025 기준 SQL을 삭제했습니다.');
+  } catch (error) {
+    button.disabled = false;
+    toast(error.message, true);
   }
 });
 $('#sql-comparison-list')?.addEventListener('click', event => {
