@@ -507,7 +507,7 @@ public class DatasetSqlExporter {
         String value = values.get("ruleType");
         if ("ADDITIONAL_EXTRACTED".equals(values.get("ruleOrigin"))) {
             String selected = normalize(value);
-            if (!Set.of("DTM", "FRM").contains(selected))
+            if (!Set.of("YN", "RNG", "FRM", "DTM", "NO", "NN").contains(selected))
                 throw new IllegalStateException("결과보고서 추출 검증룰의 진단유형을 선택해야 합니다: "
                         + values.getOrDefault("ruleName", ""));
             return selected;

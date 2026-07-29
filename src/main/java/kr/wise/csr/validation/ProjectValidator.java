@@ -168,9 +168,9 @@ public class ProjectValidator {
         if (row.dataType().equals("VERIFICATION_RULE")) {
             if ("ADDITIONAL_EXTRACTED".equals(row.values().get("ruleOrigin"))) {
                 String ruleType = row.values().getOrDefault("ruleType", "").trim().toUpperCase(Locale.ROOT);
-                if (!Set.of("DTM", "FRM").contains(ruleType))
+                if (!Set.of("YN", "RNG", "FRM", "DTM", "NO", "NN").contains(ruleType))
                     issues.add(error("MISSING_VERIFICATION_TYPE",
-                            "결과보고서에서 추출한 검증룰의 진단유형을 DTM 또는 FRM으로 선택하세요",
+                            "결과보고서에서 추출한 검증룰의 진단유형을 YN, RNG, FRM, DTM, NO, NN 중에서 선택하세요",
                             row.logicalKey()));
             }
             if (blank(row, "expression"))

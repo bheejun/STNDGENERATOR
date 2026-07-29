@@ -84,6 +84,22 @@ class ProjectValidatorTest {
     }
 
     @Test
+    void acceptsAllWdqVerificationTypesForResultReportRules() {
+        for (String ruleType : List.of("YN", "RNG", "FRM", "DTM", "NO", "NN")) {
+            ProjectSnapshot snapshot = new ProjectSnapshot(1, 1, 2026, "202607", "APP",
+                    ProjectStatus.NEEDS_REVIEW,
+                    List.of(row("VERIFICATION_RULE", "type-" + ruleType,
+                            Map.of("wdqId", "VRFC_70000000001", "ruleName", "검증룰",
+                                    "expression", "X", "ruleOrigin", "ADDITIONAL_EXTRACTED",
+                                    "ruleType", ruleType))),
+                    List.of(), 0, 0, List.of(), null, null, null);
+
+            assertThat(validator.validate(snapshot).issues())
+                    .noneMatch(issue -> issue.code().equals("MISSING_VERIFICATION_TYPE"));
+        }
+    }
+
+    @Test
     void validatesBusinessTargetsAgainstMappedColumnsAndTableExclusions() {
         ProjectSnapshot snapshot = new ProjectSnapshot(1, 1, 2026, "202607", "APP",
                 ProjectStatus.NEEDS_REVIEW,

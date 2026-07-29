@@ -556,7 +556,7 @@ function renderManagedCriteria() {
       ? '<span class="criteria-origin">추가 검증룰</span>' : '';
     const missingType = item.dataType === 'VERIFICATION_RULE'
       && item.values.ruleOrigin === 'ADDITIONAL_EXTRACTED'
-      && !['DTM', 'FRM'].includes(String(item.values.ruleType || '').toUpperCase())
+      && !['YN', 'RNG', 'FRM', 'DTM', 'NO', 'NN'].includes(String(item.values.ruleType || '').toUpperCase())
       ? '<span class="criteria-required">진단유형 선택 필요</span>' : '';
     return `<tr><td class="check-cell"><input type="checkbox" data-select-criteria="${item.id}" ${selectedCriteriaIds.has(item.id) ? 'checked' : ''}></td><td><span class="criteria-type">${escapeHtml(item.dataType)}</span>${origin}${missingType}</td><td class="criteria-key">${escapeHtml(item.logicalKey)}</td><td class="criteria-preview">${escapeHtml(preview)}</td><td class="row-actions"><button type="button" class="project-open" data-edit-item="${item.id}">수정</button><button type="button" class="project-open danger-button" data-delete-item="${item.id}">삭제</button></td></tr>`;
   }).join('') : '<tr><td colspan="5" class="project-empty">표시할 진단기준이 없습니다.</td></tr>';
@@ -736,8 +736,12 @@ $('#criteria-list').addEventListener('click', event => {
       return `<label>진단유형
         <select class="criteria-type-select" data-value-key="${escapeHtml(key)}">
           <option value="" ${selected ? '' : 'selected'}>선택하세요</option>
-          <option value="DTM" ${selected === 'DTM' ? 'selected' : ''}>DTM · 날짜/일시 형식</option>
+          <option value="YN" ${selected === 'YN' ? 'selected' : ''}>YN · 여부</option>
+          <option value="RNG" ${selected === 'RNG' ? 'selected' : ''}>RNG · 범위</option>
           <option value="FRM" ${selected === 'FRM' ? 'selected' : ''}>FRM · 일반 형식/정규식</option>
+          <option value="DTM" ${selected === 'DTM' ? 'selected' : ''}>DTM · 날짜</option>
+          <option value="NO" ${selected === 'NO' ? 'selected' : ''}>NO · 번호</option>
+          <option value="NN" ${selected === 'NN' ? 'selected' : ''}>NN · 필수값</option>
         </select>
         <small>결과보고서에는 진단유형이 없어 사용자가 직접 선택해야 합니다.</small>
       </label>`;
@@ -918,8 +922,8 @@ $('#save-criteria').addEventListener('click', async () => {
     if (!control.disabled) values[control.dataset.valueKey] = control.value;
   if (editingCriteria.dataType === 'VERIFICATION_RULE'
       && editingCriteria.values.ruleOrigin === 'ADDITIONAL_EXTRACTED'
-      && !['DTM', 'FRM'].includes(String(values.ruleType || '').toUpperCase()))
-    return toast('진단유형 DTM 또는 FRM을 선택하세요.', true);
+      && !['YN', 'RNG', 'FRM', 'DTM', 'NO', 'NN'].includes(String(values.ruleType || '').toUpperCase()))
+    return toast('진단유형을 YN, RNG, FRM, DTM, NO, NN 중에서 선택하세요.', true);
   const button = $('#save-criteria'); button.disabled = true;
   try {
     await api(`/api/projects/${editingCriteria.projectId}/criteria/${editingCriteria.id}`, {
