@@ -41,8 +41,7 @@ public class SqlStatementComparator {
             "WAA_STND_TBL_PRF", Set.of("STND_TBL_PRF_ID"));
     private static final Map<String, List<String>> LOGICAL_KEYS = Map.of(
             "WAA_DB_CONN_TRG", List.of(),
-            "WAA_STND_EXP_OBJ", List.of("STND_SCH_PNM", "STND_TBL_PNM", "STND_COL_PNM", "EXP_TYP",
-                    "TBL_EXP_STND_RULE"),
+            "WAA_STND_EXP_OBJ", List.of("STND_SCH_PNM", "STND_TBL_PNM", "STND_COL_PNM"),
             "WAA_VRFC_RULE", List.of("VRFC_NM"),
             "WAA_CD_RULE", List.of("CD_RULE_NM"),
             "WAA_CD_LIST", List.of("CD_RULE_NM", "CD_ID"),
@@ -173,6 +172,15 @@ public class SqlStatementComparator {
     }
 
     private Map<String, String> comparable(Row row) {
+        if ("WAA_STND_EXP_OBJ".equals(row.table())) {
+            String pattern = row.values().get("TBL_EXP_STND_RULE");
+            if (pattern != null && !"NULL".equals(pattern))
+                return Map.of("EXCLUSION_PATTERN", pattern);
+            return Map.of(
+                    "STND_SCH_PNM", row.values().getOrDefault("STND_SCH_PNM", "NULL"),
+                    "STND_TBL_PNM", row.values().getOrDefault("STND_TBL_PNM", "NULL"),
+                    "STND_COL_PNM", row.values().getOrDefault("STND_COL_PNM", "NULL"));
+        }
         Map<String, String> result = new LinkedHashMap<>();
         row.values().entrySet().stream().filter(entry -> !ignored(row.table(), entry.getKey()))
                 .forEach(entry -> result.put(entry.getKey(), semanticValue(entry.getKey(), entry.getValue())));
@@ -193,6 +201,14 @@ public class SqlStatementComparator {
     }
 
     private String logicalKey(String table, Row row) {
+        if ("WAA_STND_EXP_OBJ".equals(table)) {
+            String schema = row.values().getOrDefault("STND_SCH_PNM", "NULL");
+            String pattern = row.values().get("TBL_EXP_STND_RULE");
+            if (pattern != null && !"NULL".equals(pattern))
+                return schema + "|PATTERN|" + pattern;
+            return schema + "|" + row.values().getOrDefault("STND_TBL_PNM", "NULL")
+                    + "|" + row.values().getOrDefault("STND_COL_PNM", "NULL");
+        }
         List<String> keys = LOGICAL_KEYS.get(table);
         if (keys == null) return comparable(row).toString();
         if (keys.isEmpty()) return table;

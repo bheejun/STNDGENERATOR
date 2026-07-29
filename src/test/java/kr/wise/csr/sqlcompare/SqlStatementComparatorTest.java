@@ -66,4 +66,25 @@ class SqlStatementComparatorTest {
             assertThat(row.values()).containsEntry("DB_CONN_TRG_PNM", "'지킴eDB'");
         });
     }
+
+    @Test
+    void treatsSameExcludedTableOrColumnAsEqualEvenWhenReasonChanges() {
+        String baseline = """
+                insert into waa_stnd_exp_obj
+                  (STND_SCH_PNM, STND_TBL_PNM, STND_COL_PNM, EXP_TYP, TBL_EXP_RSN, OPEN_YM)
+                values ('NASGRP', 'AUDITLOG', NULL, 'TBL', '[2025] 로그 테이블 제외', '202508');
+                """;
+        String current = """
+                insert into dqlite.waa_stnd_exp_obj
+                  (STND_SCH_PNM, STND_TBL_PNM, STND_COL_PNM, EXP_TYP, TBL_EXP_RSN, OPEN_YM)
+                values ('NASGRP', 'AUDITLOG', NULL, 'TBL', '[2026] 미사용 테이블 제외', '202607');
+                """;
+
+        SqlComparisonResult result = comparator.compare("2025.sql", OffsetDateTime.now(), baseline, current);
+
+        assertThat(result.unchangedCount()).isOne();
+        assertThat(result.changedCount()).isZero();
+        assertThat(result.baselineOnlyCount()).isZero();
+        assertThat(result.currentOnlyCount()).isZero();
+    }
 }
