@@ -69,6 +69,21 @@ class ProjectValidatorTest {
     }
 
     @Test
+    void requiresManualTypeForVerificationRuleExtractedFromResultReport() {
+        ProjectSnapshot snapshot = new ProjectSnapshot(1, 1, 2026, "202607", "APP",
+                ProjectStatus.NEEDS_REVIEW,
+                List.of(row("VERIFICATION_RULE", "manual-type",
+                        Map.of("wdqId", "VRFC_70000000001", "ruleName", "날짜 형식",
+                                "expression", "YYYYMMDD", "ruleOrigin", "ADDITIONAL_EXTRACTED",
+                                "ruleType", ""))),
+                List.of(), 0, 0, List.of(), null, null, null);
+
+        assertThat(validator.validate(snapshot).issues()).anyMatch(issue ->
+                issue.code().equals("MISSING_VERIFICATION_TYPE")
+                        && issue.severity() == Severity.ERROR);
+    }
+
+    @Test
     void validatesBusinessTargetsAgainstMappedColumnsAndTableExclusions() {
         ProjectSnapshot snapshot = new ProjectSnapshot(1, 1, 2026, "202607", "APP",
                 ProjectStatus.NEEDS_REVIEW,

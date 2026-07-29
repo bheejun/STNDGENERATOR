@@ -166,6 +166,13 @@ public class ProjectValidator {
             issues.add(error("CROSS_SYSTEM_ID", "다른 시스템 소유 WDQ ID", row.logicalKey()));
 
         if (row.dataType().equals("VERIFICATION_RULE")) {
+            if ("ADDITIONAL_EXTRACTED".equals(row.values().get("ruleOrigin"))) {
+                String ruleType = row.values().getOrDefault("ruleType", "").trim().toUpperCase(Locale.ROOT);
+                if (!Set.of("DTM", "FRM").contains(ruleType))
+                    issues.add(error("MISSING_VERIFICATION_TYPE",
+                            "결과보고서에서 추출한 검증룰의 진단유형을 DTM 또는 FRM으로 선택하세요",
+                            row.logicalKey()));
+            }
             if (blank(row, "expression"))
                 issues.add(error("MISSING_RULE_EXPRESSION", "검증식이 없습니다", row.logicalKey()));
             if (blank(row, "qualityIndicator"))

@@ -68,7 +68,8 @@ class WisedqResultWorkbookParserTest {
         assertThat(batch.candidates()).anyMatch(c -> c.dataType().equals("VERIFICATION_RULE")
                 && "UNKNOWN".equals(c.values().get("excludedValues")));
         assertThat(batch.candidates()).anyMatch(c -> c.dataType().equals("VERIFICATION_RULE")
-                && "[2026표준시스템DB 테스트시스템] 여부검증".equals(c.values().get("ruleName")));
+                && "[2026표준시스템DB 테스트시스템] 여부검증".equals(c.values().get("ruleName"))
+                && "".equals(c.values().get("ruleType")));
         assertThat(batch.candidates()).anyMatch(c -> c.dataType().equals("VERIFICATION_RULE")
                 && "[기본]카탈로그불일치".equals(c.values().get("sourceRuleName"))
                 && "ADDITIONAL_EXTRACTED".equals(c.values().get("ruleOrigin")));

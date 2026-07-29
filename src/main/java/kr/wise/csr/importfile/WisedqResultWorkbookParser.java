@@ -121,6 +121,7 @@ public class WisedqResultWorkbookParser implements WorkbookParser {
     private ImportCandidate verification(CellReader.SourceRow r, String outputRuleName) {
         Map<String,String> v=map("ruleName",outputRuleName,"sourceRuleName",r.get("검증룰명"),"expression",r.get("검증룰"),
                 "qualityIndicator",r.get("품질지표명"),
+                "ruleType","",
                 "excludedValues",r.get("오류제외데이터"),
                 "excludedValueSeparator",r.first("오류제외데이터구분자", "오류제외데이터 구분자"),
                 "matchType",r.first("매칭유형", "MTCH_TYP"),

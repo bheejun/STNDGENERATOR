@@ -198,7 +198,7 @@ public class DatasetSqlExporter {
                 "VRFC_ID", "VRFC_TYP", "VRFC_NM", "VRFC_RULE", "VRFC_DESCN", "EXP_DTM", "STR_DTM",
                 "OBJ_DESCN", "OBJ_VERS", "REG_TYP_CD", "WRIT_DTM", "WRIT_USER_ID", "DQI_ID", "MNG_USER_ID",
                 "ERR_EXP_DATA", "ERR_EXP_DATA_SEP", "MTCH_TYP"),
-                List.of(q(v, "wdqId"), q(verificationType(v.get("ruleType"))), q(v, "ruleName"), q(v, "expression"),
+                List.of(q(v, "wdqId"), q(verificationType(v)), q(v, "ruleName"), q(v, "expression"),
                         optional(v.get("description")), END_DATE, NOW, NULL, "1", q("C"), NOW, q("admin"),
                         qualityIndicatorId(v.get("qualityIndicator")), NULL,
                         optional(v.get("excludedValues")), optional(v.get("excludedValueSeparator")),
@@ -503,7 +503,15 @@ public class DatasetSqlExporter {
     private String physical(Map<String, String> values, String key, String fallback) { return q(first(values.get(key), fallback)); }
     private String first(String... values) { for (String value : values) if (value != null && !value.isBlank()) return value; return ""; }
     private String normalize(String value) { return value == null ? "" : value.trim().toUpperCase(Locale.ROOT); }
-    private String verificationType(String value) {
+    private String verificationType(Map<String,String> values) {
+        String value = values.get("ruleType");
+        if ("ADDITIONAL_EXTRACTED".equals(values.get("ruleOrigin"))) {
+            String selected = normalize(value);
+            if (!Set.of("DTM", "FRM").contains(selected))
+                throw new IllegalStateException("결과보고서 추출 검증룰의 진단유형을 선택해야 합니다: "
+                        + values.getOrDefault("ruleName", ""));
+            return selected;
+        }
         String normalized = normalize(value);
         if (normalized.contains("날짜") || normalized.contains("일시") || normalized.equals("DTM")) return "DTM";
         return "FRM";

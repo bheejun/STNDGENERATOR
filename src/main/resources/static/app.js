@@ -554,7 +554,11 @@ function renderManagedCriteria() {
     const origin = item.dataType === 'VERIFICATION_RULE'
       && (item.values.ruleOrigin?.startsWith('ADDITIONAL') || item.values.sourceRuleName)
       ? '<span class="criteria-origin">추가 검증룰</span>' : '';
-    return `<tr><td class="check-cell"><input type="checkbox" data-select-criteria="${item.id}" ${selectedCriteriaIds.has(item.id) ? 'checked' : ''}></td><td><span class="criteria-type">${escapeHtml(item.dataType)}</span>${origin}</td><td class="criteria-key">${escapeHtml(item.logicalKey)}</td><td class="criteria-preview">${escapeHtml(preview)}</td><td class="row-actions"><button type="button" class="project-open" data-edit-item="${item.id}">수정</button><button type="button" class="project-open danger-button" data-delete-item="${item.id}">삭제</button></td></tr>`;
+    const missingType = item.dataType === 'VERIFICATION_RULE'
+      && item.values.ruleOrigin === 'ADDITIONAL_EXTRACTED'
+      && !['DTM', 'FRM'].includes(String(item.values.ruleType || '').toUpperCase())
+      ? '<span class="criteria-required">진단유형 선택 필요</span>' : '';
+    return `<tr><td class="check-cell"><input type="checkbox" data-select-criteria="${item.id}" ${selectedCriteriaIds.has(item.id) ? 'checked' : ''}></td><td><span class="criteria-type">${escapeHtml(item.dataType)}</span>${origin}${missingType}</td><td class="criteria-key">${escapeHtml(item.logicalKey)}</td><td class="criteria-preview">${escapeHtml(preview)}</td><td class="row-actions"><button type="button" class="project-open" data-edit-item="${item.id}">수정</button><button type="button" class="project-open danger-button" data-delete-item="${item.id}">삭제</button></td></tr>`;
   }).join('') : '<tr><td colspan="5" class="project-empty">표시할 진단기준이 없습니다.</td></tr>';
   const allSelected = rows.length > 0 && rows.every(item => selectedCriteriaIds.has(item.id));
   $('#criteria-select-filtered').checked = allSelected;
@@ -567,6 +571,7 @@ let ddlValidationProject = 0;
 let activeValidationProject = 0;
 let activeValidationIssues = [];
 const validationCodeLabels = {
+  MISSING_VERIFICATION_TYPE: '진단유형 미설정',
   WDQ_COLUMN_TOO_LONG: 'WDQ 컬럼 길이 초과',
   BUSINESS_TARGET_TABLE_NOT_DIAGNOSTIC: '업무규칙 테이블 미등록',
   BUSINESS_TARGET_COLUMN_NOT_DIAGNOSTIC: '업무규칙 컬럼 미등록',
@@ -721,7 +726,22 @@ $('#criteria-list').addEventListener('click', event => {
   if (!button) return;
   editingCriteria = managedCriteria.find(item => item.id === Number(button.dataset.editItem));
   $('#edit-criteria-key').textContent = `${editingCriteria.dataType} · ${editingCriteria.logicalKey}`;
-  $('#edit-fields').innerHTML = Object.entries(editingCriteria.values).map(([key, value]) => {
+  const editableValues = { ...editingCriteria.values };
+  if (editingCriteria.dataType === 'VERIFICATION_RULE'
+      && editingCriteria.values.ruleOrigin === 'ADDITIONAL_EXTRACTED'
+      && !Object.hasOwn(editableValues, 'ruleType')) editableValues.ruleType = '';
+  $('#edit-fields').innerHTML = Object.entries(editableValues).map(([key, value]) => {
+    if (key === 'ruleType' && editingCriteria.dataType === 'VERIFICATION_RULE') {
+      const selected = String(value || '').toUpperCase();
+      return `<label>진단유형
+        <select class="criteria-type-select" data-value-key="${escapeHtml(key)}">
+          <option value="" ${selected ? '' : 'selected'}>선택하세요</option>
+          <option value="DTM" ${selected === 'DTM' ? 'selected' : ''}>DTM · 날짜/일시 형식</option>
+          <option value="FRM" ${selected === 'FRM' ? 'selected' : ''}>FRM · 일반 형식/정규식</option>
+        </select>
+        <small>결과보고서에는 진단유형이 없어 사용자가 직접 선택해야 합니다.</small>
+      </label>`;
+    }
     const readonly = key === 'wdqId';
     const control = String(value || '').length > 100 || /sql|expression/i.test(key)
       ? `<textarea data-value-key="${escapeHtml(key)}" ${readonly ? 'disabled' : ''}>${escapeHtml(value)}</textarea>`
@@ -896,6 +916,10 @@ $('#save-criteria').addEventListener('click', async () => {
   const values = { ...editingCriteria.values };
   for (const control of document.querySelectorAll('#edit-fields [data-value-key]'))
     if (!control.disabled) values[control.dataset.valueKey] = control.value;
+  if (editingCriteria.dataType === 'VERIFICATION_RULE'
+      && editingCriteria.values.ruleOrigin === 'ADDITIONAL_EXTRACTED'
+      && !['DTM', 'FRM'].includes(String(values.ruleType || '').toUpperCase()))
+    return toast('진단유형 DTM 또는 FRM을 선택하세요.', true);
   const button = $('#save-criteria'); button.disabled = true;
   try {
     await api(`/api/projects/${editingCriteria.projectId}/criteria/${editingCriteria.id}`, {
