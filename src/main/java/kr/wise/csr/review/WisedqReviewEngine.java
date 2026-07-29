@@ -28,7 +28,7 @@ import kr.wise.csr.importfile.WisedqSchemaResolver;
 
 @Component
 public class WisedqReviewEngine implements ReviewEngine {
-    public static final String ENGINE_VERSION = "wisedq-review-0.2.0";
+    public static final String ENGINE_VERSION = "wisedq-review-0.3.0";
     private static final List<String> REQUIRED_SHEETS = List.of(
             "값진단결과", "진단대상테이블", "도메인", "진단항목실행정보");
     private static final List<String> OPTIONAL_SHEETS = List.of(
@@ -64,8 +64,8 @@ public class WisedqReviewEngine implements ReviewEngine {
                 metadata.put("schemaName", actualSchema);
             }
             reviewTables(sheets.get("진단대상테이블"), sheets.get("값진단결과"), metrics, issues);
-            Set<String> customRules = reviewDomain(sheets.get("도메인"), metrics, issues);
-            reviewExecution(sheets.get("진단항목실행정보"), customRules, metrics, issues);
+            DomainReview domainReview = reviewDomain(sheets.get("도메인"), metrics, issues);
+            reviewExecution(sheets.get("진단항목실행정보"), domainReview, metrics, issues);
             reviewBusinessRules(sheets.get("업무규칙"), metrics, issues);
             metrics.put("referenceRuleCount", countDataRows(sheets.get("참조무결성")));
             metrics.put("errorInfoCount", countDataRows(sheets.get("진단항목오류정보")));
@@ -144,14 +144,16 @@ public class WisedqReviewEngine implements ReviewEngine {
         compareSummary("미수집", summaryUncollected, uncollected, summary, issues);
     }
 
-    private Set<String> reviewDomain(Sheet sheet, Map<String, Long> metrics, List<ReviewIssue> issues) {
-        List<String> required = List.of("스키마명", "테이블명", "컬럼명", "검증룰명", "검증룰");
+    private DomainReview reviewDomain(Sheet sheet, Map<String, Long> metrics, List<ReviewIssue> issues) {
+        List<String> required = List.of("스키마명", "테이블명", "컬럼명", "데이터타입", "검증룰명", "검증룰");
         Header header = header(sheet, required);
         requireHeaders(header, sheet, required, issues);
         Set<String> customRules = new HashSet<>();
         long domain = 0, custom = 0, basic = 0, codeMappings = 0, codeRuleMissing = 0;
-        if (!header.valid()) return customRules;
+        Set<String> missingDiagnosticRules = new HashSet<>();
+        if (!header.valid()) return new DomainReview(customRules, missingDiagnosticRules);
         int indicatorColumn = header.optionalColumnContaining("품질지표명");
+        int opinionColumn = header.optionalColumnContaining("의견");
         for (int r = header.rowIndex() + 1; r <= sheet.getLastRowNum(); r++) {
             Row row = sheet.getRow(r);
             if (row == null || text(row, header.column("테이블명")).isBlank()) continue;
@@ -159,6 +161,11 @@ public class WisedqReviewEngine implements ReviewEngine {
             String ruleName = text(row, header.column("검증룰명"));
             String indicator = indicatorColumn < 0 ? "" : text(row, indicatorColumn);
             if (ruleName.isBlank()) {
+                if (indicator.isBlank()
+                        && (opinionColumn < 0 || text(row, opinionColumn).isBlank())
+                        && isDiagnosticRuleApplicable(text(row, header.column("데이터타입")))) {
+                    missingDiagnosticRules.add(targetKey(row, header));
+                }
                 if (indicator.contains("코드")) {
                     codeRuleMissing++;
                     issues.add(issue("CODE_RULE_NOT_VISIBLE", ReviewSeverity.WARNING,
@@ -184,15 +191,16 @@ public class WisedqReviewEngine implements ReviewEngine {
         metrics.put("customRuleMappingCount", custom);
         metrics.put("codeRuleMappingCount", codeMappings);
         metrics.put("missingCodeRuleCount", codeRuleMissing);
+        metrics.put("missingDiagnosticRuleCount", (long) missingDiagnosticRules.size());
         metrics.put("codeDataCount", 0L);
         if (codeMappings > 0)
             issues.add(issue("CODE_DATA_MISSING", ReviewSeverity.WARNING,
                     "코드 도메인 사용 컬럼이 있으나 결과보고서에는 코드 데이터가 제공되지 않았습니다. 프로젝트의 코드 데이터 입력 화면에서 보완해야 합니다",
                     sheet.getSheetName(), null, codeMappings + "개 컬럼", false));
-        return customRules;
+        return new DomainReview(customRules, missingDiagnosticRules);
     }
 
-    private void reviewExecution(Sheet sheet, Set<String> customRules, Map<String, Long> metrics,
+    private void reviewExecution(Sheet sheet, DomainReview domainReview, Map<String, Long> metrics,
             List<ReviewIssue> issues) {
         List<String> required = List.of("스키마명", "테이블명", "컬럼명", "검증룰명", "실행상태");
         Header header = header(sheet, required);
@@ -212,14 +220,43 @@ public class WisedqReviewEngine implements ReviewEngine {
                         "진단 실행이 완료되지 않았습니다", sheet.getSheetName(), r + 1, status, true));
             }
         }
-        for (String missing : customRules)
+        for (String missing : domainReview.customRules())
             if (!executedRules.contains(missing))
                 issues.add(issue("RULE_NOT_EXECUTED", ReviewSeverity.ERROR,
                         "추가 검증룰의 실행 내역이 없습니다", sheet.getSheetName(), null, missing, true));
         metrics.put("executionCount", executions);
         metrics.put("incompleteExecutionCount", incomplete);
         metrics.put("unexecutedCustomRuleCount",
-                customRules.stream().filter(rule -> !executedRules.contains(rule)).count());
+                domainReview.customRules().stream().filter(rule -> !executedRules.contains(rule)).count());
+        long missingCount = domainReview.missingDiagnosticRules().size();
+        long denominator = executions + missingCount;
+        long coverageBasisPoints = denominator == 0 ? 10_000L : Math.round(executions * 10_000d / denominator);
+        metrics.put("diagnosticRuleCoverageBasisPoints", coverageBasisPoints);
+        if (missingCount > 0) {
+            String coverage = String.format(Locale.KOREA, "%.2f", coverageBasisPoints / 100d);
+            String examples = domainReview.missingDiagnosticRules().stream().limit(5)
+                    .map(this::displayTargetKey).reduce((left, right) -> left + ", " + right).orElse("");
+            issues.add(issue("DIAGNOSTIC_RULE_COVERAGE_MISSING", ReviewSeverity.WARNING,
+                    "진단대상 컬럼 중 진단규칙이 없고 제외되지 않은 컬럼이 있습니다",
+                    sheet.getSheetName(), null,
+                    missingCount + "개 컬럼 · 수행률 " + coverage + "%" + (examples.isBlank() ? "" : " · " + examples),
+                    false));
+        }
+    }
+
+    private boolean isDiagnosticRuleApplicable(String dataType) {
+        String baseType = dataType == null ? "" : dataType.replaceAll("\\(.*", "").trim().toUpperCase(Locale.ROOT);
+        return !Set.of("CLOB", "BLOB", "LONG").contains(baseType);
+    }
+
+    private String targetKey(Row row, Header header) {
+        return compact(text(row, header.column("스키마명"))) + "|"
+                + compact(text(row, header.column("테이블명"))) + "|"
+                + compact(text(row, header.column("컬럼명")));
+    }
+
+    private String displayTargetKey(String key) {
+        return key.replace('|', '.');
     }
 
     private void reviewBusinessRules(Sheet sheet, Map<String, Long> metrics, List<ReviewIssue> issues) {
@@ -377,5 +414,8 @@ public class WisedqReviewEngine implements ReviewEngine {
             return columns.entrySet().stream().filter(entry -> entry.getKey().contains(compact))
                     .map(Map.Entry::getValue).findFirst().orElse(-1);
         }
+    }
+
+    private record DomainReview(Set<String> customRules, Set<String> missingDiagnosticRules) {
     }
 }

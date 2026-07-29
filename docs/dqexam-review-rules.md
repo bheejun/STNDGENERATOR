@@ -23,6 +23,7 @@
 | `TABLE_SUMMARY_MISMATCH` | 값진단결과/진단대상테이블 | 요약 건수와 상세 건수가 다름 | ERROR | Y |
 | `RULE_EXPRESSION_MISSING` | 도메인 | 검증룰명은 있으나 검증룰이 없음 | ERROR | Y |
 | `RULE_NOT_EXECUTED` | 도메인/진단항목실행정보 | 추가 검증룰의 실행 내역을 찾을 수 없음 | ERROR | Y |
+| `DIAGNOSTIC_RULE_COVERAGE_MISSING` | 도메인/진단항목실행정보 | 진단대상 컬럼에 진단규칙과 제외사유가 모두 없음 | WARNING | N |
 | `EXECUTION_NOT_COMPLETED` | 진단항목실행정보 | 실행상태가 COMPLETED가 아님 | ERROR | Y |
 | `BUSINESS_RULE_SQL_MISSING` | 업무규칙 | 업무규칙명은 있으나 대상/오류 SQL이 없음 | ERROR | Y |
 
@@ -31,4 +32,3 @@
 현재 단계에서는 dqexam의 파일 형식 판별, 진단대상/도메인/업무규칙/실행정보 검토와
 최종 인정 여부를 구조화된 JSON 결과로 재현한다. 기존 `검토결과` 엑셀 서식 생성과
 작업용 MariaDB 적재는 후속 단계에서 호환성 비교 후 추가한다.
-

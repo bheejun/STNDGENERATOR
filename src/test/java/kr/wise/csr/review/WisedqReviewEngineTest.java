@@ -82,4 +82,52 @@ class WisedqReviewEngineTest {
         assertThat(result.issues()).anyMatch(issue -> issue.code().equals("CODE_RULE_NOT_VISIBLE"));
         assertThat(result.metrics().get("missingCodeRuleCount")).isEqualTo(1);
     }
+
+    @Test
+    void countsUnmappedAndUnexcludedDiagnosticColumnsInCoverage() throws Exception {
+        Path source;
+        try (Stream<Path> files = Files.list(Path.of("sample"))) {
+            source = files.filter(path -> path.getFileName().toString().endsWith("값진단결과보고서.xlsx"))
+                    .findFirst().orElseThrow();
+        }
+        WisedqReviewEngine engine = new WisedqReviewEngine();
+        long baseline = engine.review(source, ReviewContext.empty()).metrics()
+                .getOrDefault("missingDiagnosticRuleCount", 0L);
+        Path changed = tempDirectory.resolve("missing-diagnostic-rule.xlsx");
+        try (var input = Files.newInputStream(source); var workbook = WorkbookFactory.create(input)) {
+            var sheet = workbook.sheetIterator().next();
+            for (var candidate : workbook) if (candidate.getSheetName().contains("도메인")) sheet = candidate;
+            var formatter = new DataFormatter();
+            var header = sheet.getRow(0);
+            int ruleNameColumn = -1, expressionColumn = -1, indicatorColumn = -1, opinionColumn = -1;
+            for (var cell : header) {
+                String value = formatter.formatCellValue(cell);
+                if ("검증룰명".equals(value)) ruleNameColumn = cell.getColumnIndex();
+                if ("검증룰".equals(value)) expressionColumn = cell.getColumnIndex();
+                if ("품질지표명".equals(value)) indicatorColumn = cell.getColumnIndex();
+                if (value.contains("의견")) opinionColumn = cell.getColumnIndex();
+            }
+            boolean changedRow = false;
+            for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+                var row = sheet.getRow(rowIndex);
+                if (row != null && !formatter.formatCellValue(row.getCell(ruleNameColumn)).isBlank()) {
+                    row.getCell(ruleNameColumn).setBlank();
+                    row.getCell(expressionColumn).setBlank();
+                    row.getCell(indicatorColumn).setBlank();
+                    if (opinionColumn >= 0) row.getCell(opinionColumn).setBlank();
+                    changedRow = true;
+                    break;
+                }
+            }
+            assertThat(changedRow).isTrue();
+            try (OutputStream output = Files.newOutputStream(changed)) { workbook.write(output); }
+        }
+
+        ReviewResult result = engine.review(changed, ReviewContext.empty());
+
+        assertThat(result.metrics().get("missingDiagnosticRuleCount")).isEqualTo(baseline + 1);
+        assertThat(result.metrics().get("diagnosticRuleCoverageBasisPoints")).isLessThan(10_000);
+        assertThat(result.issues()).anyMatch(issue ->
+                issue.code().equals("DIAGNOSTIC_RULE_COVERAGE_MISSING"));
+    }
 }

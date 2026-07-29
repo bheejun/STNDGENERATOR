@@ -84,13 +84,18 @@ async function loadLatestReportReview(id) {
   const review = await response.json();
   const verdictLabel = { PASS: '적합', CONDITIONAL: '조건부 적합', FAIL: '부적합' }[review.verdict] || review.verdict;
   const metrics = review.metrics || {};
+  const coverage = metrics.diagnosticRuleCoverageBasisPoints == null
+    ? '-'
+    : `${(Number(metrics.diagnosticRuleCoverageBasisPoints) / 100).toFixed(2)}%`;
   const metricCards = [
-    ['진단대상', metrics.targetTableCount ?? 0],
-    ['제외대상', metrics.excludedTableCount ?? 0],
-    ['추가 검증룰', metrics.customRuleMappingCount ?? 0],
-    ['업무규칙', metrics.businessRuleCount ?? 0],
-    ['미완료 실행', metrics.incompleteExecutionCount ?? 0]
-  ].map(([label,value]) => `<div><small>${label}</small><strong>${Number(value).toLocaleString()}건</strong></div>`).join('');
+    ['진단대상', metrics.targetTableCount ?? 0, '건'],
+    ['제외대상', metrics.excludedTableCount ?? 0, '건'],
+    ['추가 검증룰', metrics.customRuleMappingCount ?? 0, '건'],
+    ['업무규칙', metrics.businessRuleCount ?? 0, '건'],
+    ['미완료 실행', metrics.incompleteExecutionCount ?? 0, '건'],
+    ['미매핑 컬럼', metrics.missingDiagnosticRuleCount ?? 0, '건'],
+    ['수행률', coverage, '']
+  ].map(([label,value,unit]) => `<div><small>${label}</small><strong>${typeof value === 'number' ? Number(value).toLocaleString() : value}${unit}</strong></div>`).join('');
   const issues = (review.issues || []).map(issue =>
     `<li class="${issue.blocksAdoption ? 'blocking' : ''}"><strong>${escapeHtml(issue.code)}</strong> ${escapeHtml(issue.message)}
       <small>${escapeHtml(issue.sheetName || '')}${issue.rowNumber ? ` · ${issue.rowNumber}행` : ''}</small></li>`).join('');

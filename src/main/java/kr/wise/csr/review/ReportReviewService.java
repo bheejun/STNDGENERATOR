@@ -49,6 +49,17 @@ public class ReportReviewService {
         return get(runId);
     }
 
+    public ReviewView revalidateLatest(long projectId) {
+        Long sourceFileId = jdbc.query("""
+                select id from source_file
+                where project_id=? and input_track='RESULT_REPORT' and parse_status='PARSED'
+                order by created_at desc,id desc limit 1
+                """, rs -> rs.next() ? rs.getLong(1) : null, projectId);
+        if (sourceFileId == null)
+            throw new IllegalStateException("재검증할 결과보고서가 없습니다");
+        return review(projectId, sourceFileId);
+    }
+
     public ReviewView latest(long projectId) {
         List<Long> ids = jdbc.query("""
                 select id from report_review_run where project_id=? order by created_at desc,id desc limit 1
