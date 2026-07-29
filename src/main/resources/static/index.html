@@ -13,6 +13,7 @@
     <button class="active" data-view="systems">공통표준 시스템</button><button data-view="dashboard">전체 프로젝트 현황</button><button data-view="artifacts">산출물 이력</button>
     <button class="active" data-view="dashboard">프로젝트 현황</button><button data-view="register">프로젝트 등록</button>
     <button data-view="reportUpload">결과보고서 업로드</button><button data-view="criteriaUpload">진단기준 업로드</button><button data-view="results">생성 결과 · EXE</button><button data-view="manage">진단기준 관리</button>
+    <button data-view="sqlCompare">2025 SQL 비교</button>
   </nav>
 
   <main>
@@ -73,6 +74,26 @@
           <div class="criteria-upload-card" data-category="BUSINESS_RULE"><strong>업무규칙</strong><small>건수 SQL과 오류 분석 SQL</small><span>필수: 업무규칙명, DBMS명, 스키마명, 테이블명, 건수SQL, 분석SQL</span><input type="file" accept=".xlsx,.xls" multiple><div><a href="/api/criteria-templates/BUSINESS_RULE">양식 다운로드</a><button class="secondary" type="button">파일 선택·업로드</button></div></div>
           <div class="criteria-upload-card" data-category="CODE_RULE"><strong>코드규칙</strong><small>공통코드·목록성코드 생성 규칙</small><span>필수: DBMS명, 검증코드명, 코드유형, 코드생성SQL</span><input type="file" accept=".xlsx,.xls" multiple><div><a href="/api/criteria-templates/CODE_RULE">양식 다운로드</a><button class="secondary" type="button">파일 선택·업로드</button></div></div>
           <div class="criteria-upload-card integrated" data-category="INTEGRATED"><strong>통합 진단기준</strong><small>기존 WDQ 통합 진단기준 워크북</small><span>기존 WDQ에서 내려받은 통합 양식을 그대로 사용합니다.</span><input type="file" accept=".xlsx,.xls" multiple><div><button class="secondary" type="button">파일 선택·업로드</button></div></div>
+        </div>
+      </section>
+    </section>
+
+    <section class="view-section" data-view-panel="sqlCompare">
+      <section class="panel sql-compare-panel">
+        <div class="panel-heading"><div><span class="number">DIFF</span><h2>2025 기준 SQL 비교</h2></div><p>2025년에 사용한 SQL과 현재 프로젝트에서 생성되는 통합 SQL의 INSERT 차이를 확인합니다.</p></div>
+        <div class="sql-compare-toolbar">
+          <label>대상 프로젝트<select id="sql-comparison-project"></select></label>
+          <form id="sql-baseline-form">
+            <label class="sql-file-picker"><input id="sql-baseline-file" type="file" accept=".sql" required><span id="sql-baseline-file-name">2025 SQL 파일 선택</span></label>
+            <button class="primary-link" type="submit">업로드 · 비교</button>
+          </form>
+        </div>
+        <p class="manager-note sql-compare-note">주석·공백·줄바꿈·SQL 키워드 대소문자는 제외하고 INSERT 대상 테이블, 컬럼, 값을 비교합니다.</p>
+        <div id="sql-comparison-empty" class="sql-comparison-empty">프로젝트를 선택하고 2025년 SQL을 등록해주세요.</div>
+        <div id="sql-comparison-result" hidden>
+          <div class="sql-baseline-meta" id="sql-baseline-meta"></div>
+          <div class="summary-grid sql-comparison-summary" id="sql-comparison-summary"></div>
+          <div class="project-table-wrap"><table class="project-table sql-comparison-table"><thead><tr><th>대상 테이블</th><th>2025</th><th>현재</th><th>동일</th><th>2025에만</th><th>현재에만</th><th>상세</th></tr></thead><tbody id="sql-comparison-list"></tbody></table></div>
         </div>
       </section>
     </section>

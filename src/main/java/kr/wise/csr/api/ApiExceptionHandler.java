@@ -9,11 +9,12 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import kr.wise.csr.approval.ApprovalRejectedException;
+import kr.wise.csr.sqlcompare.SqlBaselineNotFoundException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
-    @ExceptionHandler(ProjectNotFoundException.class)
-    ResponseEntity<ApiError> notFound(ProjectNotFoundException exception) {
+    @ExceptionHandler({ ProjectNotFoundException.class, SqlBaselineNotFoundException.class })
+    ResponseEntity<ApiError> notFound(RuntimeException exception) {
         return error(HttpStatus.NOT_FOUND, exception.getMessage());
     }
 

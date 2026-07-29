@@ -120,7 +120,9 @@ async function api(url, options) {
   if (!response.ok) {
     let message = `요청 실패 (${response.status})`;
     try { message = (await response.json()).message || message; } catch (_) {}
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   return response.headers.get('content-type')?.includes('application/json') ? response.json() : null;
 }
@@ -137,7 +139,7 @@ function setCurrentProject(id) {
   if (selected) sessionStorage.setItem('csr.currentProjectId', String(selected));
   else sessionStorage.removeItem('csr.currentProjectId');
   for (const selector of ['#existing-project', '#report-project', '#criteria-upload-project',
-    '#manage-project', '#artifact-project-select']) {
+    '#manage-project', '#artifact-project-select', '#sql-comparison-project']) {
     const element = $(selector);
     if (element && [...element.options].some(option => Number(option.value) === selected))
       element.value = String(selected);
@@ -149,7 +151,8 @@ const statusLabels = { DRAFT: '작성중', IMPORTED: '가져오기 완료', NEED
 
 const VIEW_ROUTES = { systems: '#/systems', dashboard: '#/projects', artifacts: '#/artifacts',
   ids: '#/numbering', register: '#/register', manage: '#/manage', results: '#/results',
-  reportUpload: '#/upload/result-report', criteriaUpload: '#/upload/criteria' };
+  reportUpload: '#/upload/result-report', criteriaUpload: '#/upload/criteria',
+  sqlCompare: '#/sql-comparison' };
 
 function updateRoute(hash) {
   if (window.location.hash === hash) return;
@@ -164,6 +167,7 @@ function showView(view, route = true) {
   if (view === 'systems') loadSystems();
   if (view === 'ids') loadSystems().then(loadIdPolicies);
   if (view === 'artifacts') loadArtifactHistory();
+  if (view === 'sqlCompare') loadSqlComparison();
 }
 
 document.querySelector('.main-nav').addEventListener('click', event => {
@@ -336,6 +340,12 @@ function renderProjectSelectors() {
   if ($('#artifact-project-select')) {
     $('#artifact-project-select').innerHTML = '<option value="">프로젝트 선택</option>' + options;
     if (active.some(row => String(row.projectId) === artifactPrevious)) $('#artifact-project-select').value = artifactPrevious;
+  }
+  const comparisonPrevious = $('#sql-comparison-project')?.value;
+  if ($('#sql-comparison-project')) {
+    $('#sql-comparison-project').innerHTML = '<option value="">프로젝트 선택</option>' + options;
+    if (active.some(row => String(row.projectId) === comparisonPrevious))
+      $('#sql-comparison-project').value = comparisonPrevious;
   }
   if (projectId && active.some(row => row.projectId === projectId)) setCurrentProject(projectId);
   else if (projectId) setCurrentProject(null);
@@ -1061,6 +1071,88 @@ async function loadArtifactHistory(){
   try{const rows=await api(`/api/projects/${id}/artifacts/history`);$('#artifact-history-list').innerHTML=rows.length?rows.map(x=>`<tr><td>${new Date(x.createdAt).toLocaleString('ko-KR')}</td><td>${escapeHtml(x.artifactKind)}</td><td>${escapeHtml(x.fileName)}</td><td>${Number(x.byteSize).toLocaleString()} B</td><td><code title="${x.sha256}">${x.sha256.slice(0,16)}…</code></td></tr>`).join(''):'<tr><td colspan="5" class="project-empty">생성 이력이 없습니다.</td></tr>';}catch(e){toast(e.message,true);}
 }
 $('#artifact-project-select')?.addEventListener('change',event=>{setCurrentProject(event.target.value);loadArtifactHistory();});
+
+function sqlMetric(label, value, tone = '') {
+  return `<div class="summary-card ${tone}"><small>${label}</small><strong>${Number(value).toLocaleString()}</strong></div>`;
+}
+
+function renderSqlComparison(result) {
+  $('#sql-comparison-empty').hidden = true;
+  $('#sql-comparison-result').hidden = false;
+  $('#sql-baseline-meta').innerHTML = `<strong>${escapeHtml(result.baselineName)}</strong><span>등록 ${new Date(result.uploadedAt).toLocaleString('ko-KR')}</span>`;
+  $('#sql-comparison-summary').innerHTML =
+    sqlMetric('2025 INSERT', result.baselineStatementCount) +
+    sqlMetric('현재 INSERT', result.currentStatementCount) +
+    sqlMetric('동일', result.unchangedCount, 'same') +
+    sqlMetric('2025에만', result.baselineOnlyCount, 'removed') +
+    sqlMetric('현재에만', result.currentOnlyCount, 'added');
+  const body = $('#sql-comparison-list');
+  if (!result.tableDifferences.length) {
+    body.innerHTML = '<tr><td colspan="7" class="project-empty">INSERT 문 기준으로 달라진 부분이 없습니다.</td></tr>';
+    return;
+  }
+  body.innerHTML = result.tableDifferences.map((row, index) => {
+    const oldSql = row.baselineOnlySamples.map(sql => `<pre>${escapeHtml(sql)}</pre>`).join('') || '<p>없음</p>';
+    const newSql = row.currentOnlySamples.map(sql => `<pre>${escapeHtml(sql)}</pre>`).join('') || '<p>없음</p>';
+    return `<tr><td><code>${escapeHtml(row.tableName)}</code></td><td>${row.baselineCount}</td><td>${row.currentCount}</td><td>${row.unchangedCount}</td><td class="diff-removed">${row.baselineOnlyCount}</td><td class="diff-added">${row.currentOnlyCount}</td><td><button class="project-open" type="button" data-sql-diff="${index}">보기</button></td></tr>
+      <tr class="sql-diff-detail" data-sql-diff-detail="${index}" hidden><td colspan="7"><div class="sql-diff-columns"><section><h4>2025에만 존재</h4>${oldSql}</section><section><h4>현재에만 존재</h4>${newSql}</section></div><small>각 구분별 최대 10개 SQL을 표시합니다.</small></td></tr>`;
+  }).join('');
+}
+
+async function loadSqlComparison() {
+  const id = Number($('#sql-comparison-project')?.value || projectId);
+  if (!id) {
+    $('#sql-comparison-result').hidden = true;
+    $('#sql-comparison-empty').hidden = false;
+    $('#sql-comparison-empty').textContent = '프로젝트를 선택하고 2025년 SQL을 등록해주세요.';
+    return;
+  }
+  setCurrentProject(id);
+  try {
+    renderSqlComparison(await api(`/api/projects/${id}/sql-comparison`));
+  } catch (error) {
+    $('#sql-comparison-result').hidden = true;
+    $('#sql-comparison-empty').hidden = false;
+    $('#sql-comparison-empty').textContent = error.status === 404
+      ? '등록된 2025 기준 SQL이 없습니다. SQL 파일을 업로드하면 즉시 비교합니다.'
+      : error.message;
+  }
+}
+
+$('#sql-comparison-project')?.addEventListener('change', event => {
+  setCurrentProject(event.target.value);
+  loadSqlComparison();
+});
+$('#sql-baseline-file')?.addEventListener('change', event => {
+  $('#sql-baseline-file-name').textContent = event.target.files[0]?.name || '2025 SQL 파일 선택';
+});
+$('#sql-baseline-form')?.addEventListener('submit', async event => {
+  event.preventDefault();
+  const id = Number($('#sql-comparison-project').value || projectId);
+  const file = $('#sql-baseline-file').files[0];
+  if (!id) return toast('비교할 프로젝트를 선택해주세요.', true);
+  if (!file) return toast('2025 기준 SQL 파일을 선택해주세요.', true);
+  const button = event.currentTarget.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    renderSqlComparison(await api(`/api/projects/${id}/sql-comparison/baseline`, { method: 'POST', body: form }));
+    toast('2025 기준 SQL을 등록하고 현재 SQL과 비교했습니다.');
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
+$('#sql-comparison-list')?.addEventListener('click', event => {
+  const button = event.target.closest('[data-sql-diff]');
+  if (!button) return;
+  const detail = document.querySelector(`[data-sql-diff-detail="${button.dataset.sqlDiff}"]`);
+  detail.hidden = !detail.hidden;
+  button.textContent = detail.hidden ? '보기' : '닫기';
+});
+
 async function restoreRoute() {
   const route = window.location.hash || '#/systems';
   const projectMatch = route.match(/^#\/(?:results|projects)\/(\d+)$/);
