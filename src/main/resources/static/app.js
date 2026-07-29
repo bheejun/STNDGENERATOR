@@ -1081,21 +1081,23 @@ function renderSqlComparison(result) {
   $('#sql-comparison-result').hidden = false;
   $('#sql-baseline-meta').innerHTML = `<strong>${escapeHtml(result.baselineName)}</strong><span>등록 ${new Date(result.uploadedAt).toLocaleString('ko-KR')}</span>`;
   $('#sql-comparison-summary').innerHTML =
-    sqlMetric('2025 INSERT', result.baselineStatementCount) +
-    sqlMetric('현재 INSERT', result.currentStatementCount) +
+    sqlMetric('2025 데이터 행', result.baselineRowCount) +
+    sqlMetric('현재 데이터 행', result.currentRowCount) +
     sqlMetric('동일', result.unchangedCount, 'same') +
+    sqlMetric('값 변경', result.changedCount, 'changed') +
     sqlMetric('2025에만', result.baselineOnlyCount, 'removed') +
     sqlMetric('현재에만', result.currentOnlyCount, 'added');
   const body = $('#sql-comparison-list');
   if (!result.tableDifferences.length) {
-    body.innerHTML = '<tr><td colspan="7" class="project-empty">INSERT 문 기준으로 달라진 부분이 없습니다.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" class="project-empty">WDQ 적재 데이터 행 기준으로 달라진 부분이 없습니다.</td></tr>';
     return;
   }
   body.innerHTML = result.tableDifferences.map((row, index) => {
-    const oldSql = row.baselineOnlySamples.map(sql => `<pre>${escapeHtml(sql)}</pre>`).join('') || '<p>없음</p>';
-    const newSql = row.currentOnlySamples.map(sql => `<pre>${escapeHtml(sql)}</pre>`).join('') || '<p>없음</p>';
-    return `<tr><td><code>${escapeHtml(row.tableName)}</code></td><td>${row.baselineCount}</td><td>${row.currentCount}</td><td>${row.unchangedCount}</td><td class="diff-removed">${row.baselineOnlyCount}</td><td class="diff-added">${row.currentOnlyCount}</td><td><button class="project-open" type="button" data-sql-diff="${index}">보기</button></td></tr>
-      <tr class="sql-diff-detail" data-sql-diff-detail="${index}" hidden><td colspan="7"><div class="sql-diff-columns"><section><h4>2025에만 존재</h4>${oldSql}</section><section><h4>현재에만 존재</h4>${newSql}</section></div><small>각 구분별 최대 10개 SQL을 표시합니다.</small></td></tr>`;
+    const changed = row.changedRows.map(change => `<article class="sql-value-change"><strong>${escapeHtml(change.logicalKey)}</strong>${change.differences.map(diff => `<div><code>${escapeHtml(diff.column)}</code><span class="old">${escapeHtml(diff.baselineValue)}</span><span class="new">${escapeHtml(diff.currentValue)}</span></div>`).join('')}</article>`).join('') || '<p>없음</p>';
+    const oldSql = row.baselineOnlySamples.map(sample => `<div class="sql-row-sample"><strong>${escapeHtml(sample.logicalKey)}</strong><pre>${escapeHtml(sample.sql)}</pre></div>`).join('') || '<p>없음</p>';
+    const newSql = row.currentOnlySamples.map(sample => `<div class="sql-row-sample"><strong>${escapeHtml(sample.logicalKey)}</strong><pre>${escapeHtml(sample.sql)}</pre></div>`).join('') || '<p>없음</p>';
+    return `<tr><td><code>${escapeHtml(row.tableName)}</code></td><td>${row.baselineCount}</td><td>${row.currentCount}</td><td>${row.unchangedCount}</td><td class="diff-changed">${row.changedCount}</td><td class="diff-removed">${row.baselineOnlyCount}</td><td class="diff-added">${row.currentOnlyCount}</td><td><button class="project-open" type="button" data-sql-diff="${index}">보기</button></td></tr>
+      <tr class="sql-diff-detail" data-sql-diff-detail="${index}" hidden><td colspan="8"><section class="sql-changed-section"><h4>값이 변경된 행</h4>${changed}</section><div class="sql-diff-columns"><section><h4>2025에만 존재</h4>${oldSql}</section><section><h4>현재에만 존재</h4>${newSql}</section></div><small>각 구분별 최대 10개 행을 표시합니다.</small></td></tr>`;
   }).join('');
 }
 
