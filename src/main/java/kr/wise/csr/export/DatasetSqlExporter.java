@@ -513,7 +513,13 @@ public class DatasetSqlExporter {
             return selected;
         }
         String normalized = normalize(value);
-        if (normalized.contains("날짜") || normalized.contains("일시") || normalized.equals("DTM")) return "DTM";
+        if (Set.of("YN", "RNG", "FRM", "DTM", "NO", "NN").contains(normalized)) return normalized;
+        if (normalized.contains("여부")) return "YN";
+        if (normalized.contains("범위")) return "RNG";
+        if (normalized.contains("형식")) return "FRM";
+        if (normalized.contains("날짜") || normalized.contains("일시")) return "DTM";
+        if (normalized.contains("번호")) return "NO";
+        if (normalized.contains("필수")) return "NN";
         return "FRM";
     }
     private String matchType(String value) { return normalize(value).contains("일치") && !normalize(value).contains("불일치") ? "Y" : "N"; }

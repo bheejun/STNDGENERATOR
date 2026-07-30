@@ -36,6 +36,7 @@ class DatasetSqlExporterTest {
                 .contains("OBJ_VERS, REG_TYP_CD, WRIT_DTM, WRIT_USER_ID, DQI_ID")
                 .contains("SELECT DQI_ID FROM dqlite.WAM_DQI")
                 .contains("WHERE DQI_LNM='완전성'")
+                .contains("'STNDRULE_0000001', 'RNG'")
                 .contains("STNDRULE_0000001").doesNotContain("STAT_00000000001")
                 .doesNotContain("PT01").doesNotContain("PT02");
         assertThat(text(files, "05-code-list.sql")).contains("INSERT INTO dqlite.WAA_CD_LIST")
@@ -69,7 +70,8 @@ class DatasetSqlExporterTest {
                 row("SYSTEM","S",Map.of("wdqId","STNDDB_00000001","wdqNamespace","0","systemName","합성시스템","dbmsOriginal","MAILDB","schemaOriginal","APP")),
                 row("EXCLUSION","E",Map.of("wdqId","STNDEXP_0000001","systemName","합성시스템","dbmsOriginal","MAILDB","schemaOriginal","APP","tableOriginal","TMP","columnOriginal","","exclusionType","TBL","reason","임시")),
                 row("EXCLUSION_PATTERN","EP",Map.of("wdqId","STNDEXP_0000002","dbmsOriginal","MAILDB","schemaOriginal","APP","relation","B","pattern","TMP","reason","[2026표준] 임시테이블")),
-                row("VERIFICATION_RULE","V",Map.of("wdqId","STNDRULE_0000001","ruleName","여부","expression","Y,N","qualityIndicator","완전성")),
+                row("VERIFICATION_RULE","V",Map.of("wdqId","STNDRULE_0000001","ruleName","범위","expression","컬럼 >= 0",
+                        "qualityIndicator","완전성","ruleOrigin","ADDITIONAL_UPLOADED","ruleType","범위")),
                 row("VERIFICATION_RULE","VD",Map.of("wdqId","STAT_00000000001","ruleName","[기본]여부(Y,N)","expression","Y,N","qualityIndicator","완전성")),
                 row("CODE_RULE","C",Map.of("wdqId","STNDCD_00000001","ruleName","코드","codeType","목록성코드","lookupSql","select code from codes")),
                 row("CODE_VALUE","CV",Map.of("ruleName","코드","codeId","A","codeName","코드A")),
