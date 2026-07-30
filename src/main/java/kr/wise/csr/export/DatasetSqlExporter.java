@@ -12,6 +12,7 @@ import java.util.function.BiConsumer;
 
 import org.springframework.stereotype.Component;
 
+import kr.wise.csr.catalog.DefaultQualityIndicatorCatalog;
 import kr.wise.csr.normalization.NormalizedRow;
 import kr.wise.csr.project.DbConnectionTarget;
 import kr.wise.csr.project.ProjectSnapshot;
@@ -22,6 +23,16 @@ public class DatasetSqlExporter {
     private static final String NULL = "NULL";
     private static final String NOW = "NOW()";
     private static final String END_DATE = "'9999-12-31 00:00:00.000'";
+    private final DefaultQualityIndicatorCatalog qualityIndicators;
+
+    public DatasetSqlExporter() {
+        this.qualityIndicators = null;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public DatasetSqlExporter(DefaultQualityIndicatorCatalog qualityIndicators) {
+        this.qualityIndicators = qualityIndicators;
+    }
 
     public List<GeneratedFile> exportDatasetSql(ProjectSnapshot snapshot) {
         ExportContext context = context(snapshot);
@@ -207,10 +218,12 @@ public class DatasetSqlExporter {
 
     private String qualityIndicatorId(String qualityIndicator) {
         if (qualityIndicator == null || qualityIndicator.isBlank()) return NULL;
-        return "(SELECT DQI_ID FROM dqlite.WAM_DQI"
-                + " WHERE DQI_LNM=" + q(qualityIndicator.trim())
-                + " AND COALESCE(REG_TYP_CD,'C')<>'D'"
-                + " ORDER BY DQI_LVL DESC LIMIT 1)";
+        String name = qualityIndicator.trim();
+        String id = (qualityIndicators == null
+                ? DefaultQualityIndicatorCatalog.builtInId(name)
+                : qualityIndicators.findId(name))
+                .orElseThrow(() -> new IllegalStateException("내부 품질지표 카탈로그에 없는 이름입니다: " + name));
+        return q(id);
     }
 
     private void codeRule(StringBuilder sql, RowContext row) {

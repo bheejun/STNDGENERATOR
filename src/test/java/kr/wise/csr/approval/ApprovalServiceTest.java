@@ -31,7 +31,9 @@ class ApprovalServiceTest {
     }
 
     private ProjectSnapshot valid() {
-        var row = new NormalizedRow("VERIFICATION_RULE","R",Map.of("wdqId","STNDRULE_0000001","ruleName","여부","expression","Y,N"),List.of(),"f");
+        var row = new NormalizedRow("VERIFICATION_RULE","R",Map.of(
+                "wdqId","STNDRULE_0000001","ruleName","여부","expression","Y,N",
+                "qualityIndicator","여부 도메인"),List.of(),"f");
         return new ProjectSnapshot(1,1,2026,"202607","APP",ProjectStatus.VALIDATED,List.of(row),List.of(),0,0,List.of(),null,null,null);
     }
 }

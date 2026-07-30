@@ -100,6 +100,20 @@ class ProjectValidatorTest {
     }
 
     @Test
+    void rejectsQualityIndicatorOutsideInternalCatalog() {
+        ProjectSnapshot snapshot = new ProjectSnapshot(1, 1, 2026, "202607", "APP",
+                ProjectStatus.NEEDS_REVIEW,
+                List.of(row("VERIFICATION_RULE", "unknown-dqi",
+                        Map.of("wdqId", "VRFC_70000000001", "ruleName", "검증룰",
+                                "expression", "X", "qualityIndicator", "존재하지 않는 지표"))),
+                List.of(), 0, 0, List.of(), null, null, null);
+
+        assertThat(validator.validate(snapshot).issues()).anyMatch(issue ->
+                issue.code().equals("UNKNOWN_QUALITY_INDICATOR")
+                        && issue.severity() == Severity.ERROR);
+    }
+
+    @Test
     void validatesBusinessTargetsAgainstMappedColumnsAndTableExclusions() {
         ProjectSnapshot snapshot = new ProjectSnapshot(1, 1, 2026, "202607", "APP",
                 ProjectStatus.NEEDS_REVIEW,

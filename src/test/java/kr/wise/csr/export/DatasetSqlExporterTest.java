@@ -34,8 +34,8 @@ class DatasetSqlExporterTest {
         String verification = text(files, "03-verification-rule.sql");
         assertThat(verification).contains("INSERT INTO dqlite.WAA_VRFC_RULE (VRFC_ID, VRFC_TYP, VRFC_NM, VRFC_RULE")
                 .contains("OBJ_VERS, REG_TYP_CD, WRIT_DTM, WRIT_USER_ID, DQI_ID")
-                .contains("SELECT DQI_ID FROM dqlite.WAM_DQI")
-                .contains("WHERE DQI_LNM='완전성'")
+                .contains("'OBJ_00000084172'")
+                .doesNotContain("SELECT DQI_ID FROM dqlite.WAM_DQI")
                 .contains("'STNDRULE_0000001', 'RNG'")
                 .contains("STNDRULE_0000001").doesNotContain("STAT_00000000001")
                 .doesNotContain("PT01").doesNotContain("PT02");
@@ -48,8 +48,8 @@ class DatasetSqlExporterTest {
                 .contains("'CODE_COL', 'CODE_COL', 'CD', 'STNDCD_00000001', 'LRG009'")
                 .doesNotContain("WHERE (STND_SCH_PNM, STND_TBL_PNM, STND_COL_PNM) IN");
         assertThat(text(files, "07-business-rule.sql"))
-                .contains("SELECT DQI_ID FROM dqlite.WAM_DQI")
-                .contains("WHERE DQI_LNM='완전성'")
+                .contains("'OBJ_00000103013'")
+                .doesNotContain("SELECT DQI_ID FROM dqlite.WAM_DQI")
                 .contains("'업무 설명', '내부 지침'");
         String exclusion = text(files, "02-exclusion.sql");
         assertThat(exclusion)
@@ -71,8 +71,8 @@ class DatasetSqlExporterTest {
                 row("EXCLUSION","E",Map.of("wdqId","STNDEXP_0000001","systemName","합성시스템","dbmsOriginal","MAILDB","schemaOriginal","APP","tableOriginal","TMP","columnOriginal","","exclusionType","TBL","reason","임시")),
                 row("EXCLUSION_PATTERN","EP",Map.of("wdqId","STNDEXP_0000002","dbmsOriginal","MAILDB","schemaOriginal","APP","relation","B","pattern","TMP","reason","[2026표준] 임시테이블")),
                 row("VERIFICATION_RULE","V",Map.of("wdqId","STNDRULE_0000001","ruleName","범위","expression","컬럼 >= 0",
-                        "qualityIndicator","완전성","ruleOrigin","ADDITIONAL_UPLOADED","ruleType","범위")),
-                row("VERIFICATION_RULE","VD",Map.of("wdqId","STAT_00000000001","ruleName","[기본]여부(Y,N)","expression","Y,N","qualityIndicator","완전성")),
+                        "qualityIndicator","수량 도메인","ruleOrigin","ADDITIONAL_UPLOADED","ruleType","범위")),
+                row("VERIFICATION_RULE","VD",Map.of("wdqId","STAT_00000000001","ruleName","[기본]여부(Y,N)","expression","Y,N","qualityIndicator","여부 도메인")),
                 row("CODE_RULE","C",Map.of("wdqId","STNDCD_00000001","ruleName","코드","codeType","목록성코드","lookupSql","select code from codes")),
                 row("CODE_VALUE","CV",Map.of("ruleName","코드","codeId","A","codeName","코드A")),
                 row("COLUMN_MAPPING","M",Map.of("wdqId","STND_0000000001","dbmsOriginal","MAILDB","schemaOriginal","APP","tableOriginal","TB","columnOriginal","COL","ruleType","VERIFICATION","verificationRuleId","STNDRULE_0000001")),
@@ -82,7 +82,7 @@ class DatasetSqlExporterTest {
                         Map.entry("dbmsOriginal","MAILDB"), Map.entry("schemaOriginal","APP"),
                         Map.entry("tableOriginal","TB"), Map.entry("ruleName","업무"),
                         Map.entry("ruleKind","BUSINESS"), Map.entry("ruleSql","select count(*) from TB"),
-                        Map.entry("qualityIndicator","완전성"), Map.entry("description","업무 설명"),
+                        Map.entry("qualityIndicator","업무규칙"), Map.entry("description","업무 설명"),
                         Map.entry("basis","내부 지침"))));
         ProjectSnapshot base=new ProjectSnapshot(1,1,2026,"202607","APP",ProjectStatus.VALIDATED,rows,List.of(),0,0,List.of(),null,null,null);
         return base.approved("담당자", OffsetDateTime.parse("2026-07-15T10:00:00+09:00"));

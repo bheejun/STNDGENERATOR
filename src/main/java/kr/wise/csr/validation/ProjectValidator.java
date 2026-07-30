@@ -8,6 +8,7 @@ import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import kr.wise.csr.catalog.DefaultQualityIndicatorCatalog;
 import kr.wise.csr.importfile.DefaultVerificationRuleCatalog;
 import kr.wise.csr.normalization.NormalizedRow;
 import kr.wise.csr.project.ProjectSnapshot;
@@ -15,14 +16,18 @@ import kr.wise.csr.project.ProjectSnapshot;
 @Component
 public class ProjectValidator {
     private final DefaultVerificationRuleCatalog defaultRules;
+    private final DefaultQualityIndicatorCatalog qualityIndicators;
 
     @Autowired
-    public ProjectValidator(DefaultVerificationRuleCatalog defaultRules) {
+    public ProjectValidator(DefaultVerificationRuleCatalog defaultRules,
+            DefaultQualityIndicatorCatalog qualityIndicators) {
         this.defaultRules = defaultRules;
+        this.qualityIndicators = qualityIndicators;
     }
 
     public ProjectValidator() {
         this.defaultRules = null;
+        this.qualityIndicators = null;
     }
 
     public ValidationReport validate(ProjectSnapshot project) {
@@ -177,6 +182,10 @@ public class ProjectValidator {
                 issues.add(error("MISSING_RULE_EXPRESSION", "검증식이 없습니다", row.logicalKey()));
             if (blank(row, "qualityIndicator"))
                 issues.add(error("MISSING_QUALITY_INDICATOR", "검증룰 품질지표명이 없습니다", row.logicalKey()));
+            else if (!knownQualityIndicator(row.values().get("qualityIndicator")))
+                issues.add(error("UNKNOWN_QUALITY_INDICATOR",
+                        "내부 품질지표 카탈로그에 없는 이름입니다: " + row.values().get("qualityIndicator"),
+                        row.logicalKey()));
             String expression = row.values().getOrDefault("expression", "");
             if (expression.matches(".*\\?[dDsSwW].*") && !expression.matches(".*\\\\[dDsSwW].*"))
                 issues.add(warning("SUSPICIOUS_REGEX_ESCAPE",
@@ -190,6 +199,10 @@ public class ProjectValidator {
             if (blank(row, "ruleSql")) issues.add(error("MISSING_BUSINESS_SQL", "업무규칙 SQL이 없습니다", row.logicalKey()));
             if (blank(row, "qualityIndicator"))
                 issues.add(error("MISSING_QUALITY_INDICATOR", "업무규칙 품질지표명이 없습니다", row.logicalKey()));
+            else if (!knownQualityIndicator(row.values().get("qualityIndicator")))
+                issues.add(error("UNKNOWN_QUALITY_INDICATOR",
+                        "내부 품질지표 카탈로그에 없는 이름입니다: " + row.values().get("qualityIndicator"),
+                        row.logicalKey()));
             String sql = row.values().getOrDefault("ruleSql", "").toUpperCase(Locale.ROOT);
             if (project.defaultSchema() != null && !project.defaultSchema().isBlank()
                     && sql.contains(project.defaultSchema().toUpperCase(Locale.ROOT) + "."))
@@ -270,6 +283,11 @@ public class ProjectValidator {
         return normalized.startsWith("STAT_") || normalized.startsWith("VRF1_");
     }
     private boolean blank(NormalizedRow row,String key){return row.values().getOrDefault(key,"").isBlank();}
+    private boolean knownQualityIndicator(String name) {
+        return qualityIndicators == null
+                ? DefaultQualityIndicatorCatalog.isBuiltIn(name)
+                : qualityIndicators.findId(name).isPresent();
+    }
     private void add(Set<String>s,String value){if(value!=null&&!value.isBlank())s.add(value.trim());}
     private String tableKey(ProjectSnapshot project, NormalizedRow row) {
         String table = norm(first(row.values().get("tableNormalized"), row.values().get("tableOriginal")));

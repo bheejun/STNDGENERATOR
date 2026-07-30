@@ -572,6 +572,7 @@ let activeValidationProject = 0;
 let activeValidationIssues = [];
 const validationCodeLabels = {
   MISSING_VERIFICATION_TYPE: '진단유형 미설정',
+  UNKNOWN_QUALITY_INDICATOR: '품질지표 카탈로그 불일치',
   WDQ_COLUMN_TOO_LONG: 'WDQ 컬럼 길이 초과',
   BUSINESS_TARGET_TABLE_NOT_DIAGNOSTIC: '업무규칙 테이블 미등록',
   BUSINESS_TARGET_COLUMN_NOT_DIAGNOSTIC: '업무규칙 컬럼 미등록',
