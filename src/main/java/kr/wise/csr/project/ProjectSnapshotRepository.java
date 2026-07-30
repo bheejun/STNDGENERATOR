@@ -80,7 +80,8 @@ public class ProjectSnapshotRepository {
 
     public Optional<ProjectSnapshot> findByProjectId(long projectId) {
         List<Meta> metadata=jdbc.query("""
-                select p.id,p.system_id,p.target_year,p.deployment_year_month,p.status,s.default_schema_original,
+                select p.id,p.system_id,p.target_year,p.deployment_year_month,p.status,
+                  coalesce(p.applied_schema_original,s.default_schema_original),
                   p.excluded_pt01_count,p.excluded_pt02_count,p.import_errors_json::text,p.approved_by,p.approved_at,p.approved_snapshot_hash,
                   s.system_name,s.dbms_physical_name,s.dbms_type,
                   coalesce((select r.wdq_id from id_registry r where r.system_id=p.system_id and r.id_type='DB_CONNECTION' order by r.id limit 1),''),

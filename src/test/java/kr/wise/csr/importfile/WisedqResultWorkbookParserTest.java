@@ -54,7 +54,8 @@ class WisedqResultWorkbookParserTest {
 
         assertThat(batch.errors()).isEmpty();
         assertThat(batch.candidates()).extracting(ImportCandidate::dataType)
-                .contains("SYSTEM", "EXCLUSION", "VERIFICATION_RULE", "COLUMN_MAPPING", "BUSINESS_RULE");
+                .contains("SYSTEM", "EXCLUSION", "VERIFICATION_RULE", "COLUMN_MAPPING", "COLUMN_INVENTORY",
+                        "BUSINESS_RULE");
         assertThat(batch.excludedPt01Count()).isZero();
         assertThat(batch.excludedPt02Count()).isEqualTo(1);
         assertThat(batch.candidates()).noneMatch(c -> c.values().containsValue("PT01") || c.values().containsValue("PT02"));

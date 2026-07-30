@@ -36,7 +36,7 @@ public class ProjectNormalizationService {
 
         List<NormalizedRow> assigned = new ArrayList<>();
         for (NormalizedRow row : merged.rows()) {
-            if (row.dataType().equals("CODE_VALUE")) {
+            if (row.dataType().equals("CODE_VALUE") || row.dataType().equals("COLUMN_INVENTORY")) {
                 assigned.add(row);
                 continue;
             }

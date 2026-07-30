@@ -41,6 +41,22 @@ class TestDdlExporterTest {
                 .contains("`CONTENT` BLOB");
     }
 
+    @Test
+    void usesDomainColumnInventoryForExcludedTable() {
+        ProjectSnapshot snapshot = snapshot("ORA", List.of(
+                row("EXCLUSION", "E1", Map.of("schemaOriginal", "APP", "tableOriginal", "LOG_BACKUP",
+                        "columnOriginal", "", "exclusionType", "TBL", "expYn", "Y")),
+                row("COLUMN_INVENTORY", "I1", Map.of("schemaOriginal", "APP", "tableOriginal", "LOG_BACKUP",
+                        "columnOriginal", "LOG_ID", "dataType", "NUMBER")),
+                row("COLUMN_INVENTORY", "I2", Map.of("schemaOriginal", "APP", "tableOriginal", "LOG_BACKUP",
+                        "columnOriginal", "LOG_TEXT", "dataType", "CLOB"))));
+
+        assertThat(text(new TestDdlExporter().export(snapshot)))
+                .contains("\"LOG_ID\" DECIMAL(38,10)")
+                .contains("\"LOG_TEXT\" CLOB")
+                .doesNotContain("\"DUMMY_COL\" VARCHAR2(255)");
+    }
+
     private ProjectSnapshot snapshot(String dbmsType, List<NormalizedRow> rows) {
         return new ProjectSnapshot(1, 1, 2026, "202607", "APP", "테스트시스템", "TESTDB", dbmsType, "STNDDB_1",
                 ProjectStatus.VALIDATED, rows, List.of(), 0, 0, List.of(), null, null, null);

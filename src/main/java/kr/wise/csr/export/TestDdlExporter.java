@@ -20,8 +20,7 @@ public class TestDdlExporter {
             Map<String, String> values = row.values();
             String table = value(values, "tableOriginal");
             if (table.isBlank()) continue;
-            String schema = value(values, "schemaOriginal");
-            if (schema.isBlank()) schema = snapshot.defaultSchema();
+            String schema = snapshot.defaultSchema();
             TableKey key = new TableKey(schema, table);
             LinkedHashMap<String, String> columns = tables.computeIfAbsent(key, ignored -> new LinkedHashMap<>());
             String column = value(values, "columnOriginal");
@@ -36,7 +35,7 @@ public class TestDdlExporter {
                 .append("-- 테스트용 DDL / DBMS: ").append(dialect.label).append('\n')
                 .append("-- 프로젝트: ").append(snapshot.systemName()).append(" / ")
                 .append(snapshot.targetYear()).append('\n')
-                .append("-- 원본 자료에 컬럼이 없는 테이블은 DUMMY_COL로 생성합니다.\n\n");
+                .append("-- (룰설정)도메인의 전체 컬럼을 포함하며, 원본 자료에 컬럼이 전혀 없는 테이블만 DUMMY_COL로 생성합니다.\n\n");
 
         for (Map.Entry<TableKey, LinkedHashMap<String, String>> entry : tables.entrySet()) {
             TableKey table = entry.getKey();

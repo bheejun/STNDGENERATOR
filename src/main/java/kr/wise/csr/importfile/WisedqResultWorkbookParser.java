@@ -52,6 +52,7 @@ public class WisedqResultWorkbookParser implements WorkbookParser {
             try {
                 for (var row : reader.rows(workbook.getSheet("(룰설정)도메인"),
                         "DBMS명", "스키마명", "테이블명", "컬럼명", "검증룰명", "검증룰")) {
+                    candidates.add(columnInventory(row));
                     String opinion = opinion(row);
                     if (opinion.contains("[컬럼제외사유]")) {
                         candidates.add(columnExclusion(row, opinion));
@@ -106,6 +107,14 @@ public class WisedqResultWorkbookParser implements WorkbookParser {
     private ImportCandidate exclusion(CellReader.SourceRow r) {
         Map<String,String> v = physical(r); v.put("exclusionType", "TBL"); v.put("reason", opinion(r)); v.put("expYn", "Y");
         return candidate("EXCLUSION", key(v, "dbmsNormalized","schemaNormalized","tableNormalized","columnNormalized","exclusionType"), v, "(테이블선정)진단대상테이블", r.rowNumber());
+    }
+    private ImportCandidate columnInventory(CellReader.SourceRow r) {
+        Map<String,String> v = physical(r);
+        v.put("dataType", r.first("데이터타입", "DATA_TYPE"));
+        v.put("nullAllowed", r.first("NULL 허용 여부", "NULL_YN"));
+        return candidate("COLUMN_INVENTORY",
+                key(v, "dbmsNormalized", "schemaNormalized", "tableNormalized", "columnNormalized"),
+                v, "(룰설정)도메인", r.rowNumber());
     }
     private ImportCandidate columnExclusion(CellReader.SourceRow r, String reason) {
         Map<String,String> v = physical(r); v.put("exclusionType", "COL"); v.put("reason", reason); v.put("expYn", "Y");

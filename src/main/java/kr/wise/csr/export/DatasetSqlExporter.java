@@ -63,6 +63,12 @@ public class DatasetSqlExporter {
             rows = rows.stream()
                     .filter(row -> !isDefaultRuleId(row.values().get("wdqId")))
                     .toList();
+        if ("COLUMN_MAPPING".equals(type)) {
+            Set<String> excludedColumns = excludedColumnKeys(snapshot);
+            rows = rows.stream()
+                    .filter(row -> !excludedColumns.contains(columnIdentity(snapshot, row)))
+                    .toList();
+        }
         StringBuilder sql = header(snapshot).append("-- 기존 연결정보는 변경하지 않고 생성 대상 ID만 교체합니다.\n");
         if ("COLUMN_MAPPING".equals(type))
             appendDeleteNamespace(sql, snapshot, "WAA_STND_RULE_SET", "STND_RULE_SET_ID", "STND_", "컬럼 매핑");
@@ -186,7 +192,7 @@ public class DatasetSqlExporter {
                     "STND_COL_PNM", "EXP_TYP", "TBL_EXP_RSN", "TBL_ADD_CND", "TBL_ADD_CND_RSN",
                     "TBL_EXP_STND_RULE", "INCLD_REL", "TBL_EXP_STND_RULE_RSN", "COL_EXP_RSN", "OPEN_YM", "EXP_YN"),
                     List.of(q(v, "wdqId"), q(row.context().systemName()), q(row.context().dbmsName()),
-                            physical(v, "schemaOriginal", row.context().schema()), NULL, NULL, q("EXR"), NULL,
+                            q(row.context().schema()), NULL, NULL, q("EXR"), NULL,
                             NULL, NULL, q(v, "pattern"), optional(v.get("relation")), optional(v.get("reason")),
                             NULL, q(row.context().openYm()), q("Y")));
             return;
@@ -197,7 +203,7 @@ public class DatasetSqlExporter {
                 "STND_COL_PNM", "EXP_TYP", "TBL_EXP_RSN", "TBL_ADD_CND", "TBL_ADD_CND_RSN",
                 "TBL_EXP_STND_RULE", "INCLD_REL", "TBL_EXP_STND_RULE_RSN", "COL_EXP_RSN", "OPEN_YM", "EXP_YN"),
                 List.of(q(v, "wdqId"), q(row.context().systemName()), q(row.context().dbmsName()),
-                        physical(v, "schemaOriginal", row.context().schema()), optional(v.get("tableOriginal")),
+                        q(row.context().schema()), optional(v.get("tableOriginal")),
                         optional(v.get("columnOriginal")), q(v, "exclusionType"), table ? optional(v.get("reason")) : NULL,
                         NULL, NULL, NULL, NULL, NULL, table ? NULL : optional(v.get("reason")),
                         q(row.context().openYm()), q(first(v.get("expYn"), "Y"))));
@@ -228,11 +234,12 @@ public class DatasetSqlExporter {
 
     private void codeRule(StringBuilder sql, RowContext row) {
         Map<String, String> v = row.values();
+        String lookupSql = qualifySql(v.get("lookupSql"), row.context());
         insert(sql, "WAA_CD_RULE", List.of(
                 "CD_RULE_ID", "DB_CONN_TRG_ID", "CD_RULE_NM", "CD_SQL", "CD_CLS_COL_NM", "CD_CLS_NM_COL_NM",
                 "CD_ID_COL_NM", "CD_NM_COL_NM", "OBJ_DESCN", "WRIT_DTM", "CD_TYP_CD", "DB_SCH_ID", "EXL_YN",
                 "RQST_DTM", "RQST_USER_ID"),
-                List.of(q(v, "wdqId"), q(row.context().connectionId()), q(v, "ruleName"), optional(v.get("lookupSql")),
+                List.of(q(v, "wdqId"), q(row.context().connectionId()), q(v, "ruleName"), optional(lookupSql),
                         NULL, NULL, NULL, NULL, optional(v.get("description")), NOW, q(codeType(v.get("codeType"))),
                         NULL, q(codeExclusiveYn(v, row.context())), NOW, q("admin")));
     }
@@ -280,8 +287,8 @@ public class DatasetSqlExporter {
                 "STND_SCH_LNM", "STND_TBL_PNM", "STND_TBL_LNM", "STND_COL_PNM", "STND_COL_LNM",
                 "RULE_SET_TYP", "VRFC_ID", "CD_CLS_ID", "OPEN_YM", "COL_RMK"),
                 List.of(q(v, "wdqId"), q(row.context().systemName()), q(row.context().dbmsName()),
-                        q(row.context().dbmsName()), physical(v, "schemaOriginal", row.context().schema()),
-                        physical(v, "schemaOriginal", row.context().schema()), q(v, "tableOriginal"), q(v, "tableOriginal"),
+                        q(row.context().dbmsName()), q(row.context().schema()),
+                        q(row.context().schema()), q(v, "tableOriginal"), q(v, "tableOriginal"),
                         q(v, "columnOriginal"), optional(first(v.get("columnLogicalName"), v.get("columnOriginal"))),
                         q(codeMapping ? "CD" : "VRFC"), q(ruleId), codeMapping ? optional(codeClassId) : NULL,
                         q(row.context().openYm()), optional(v.get("comment"))));
@@ -300,7 +307,8 @@ public class DatasetSqlExporter {
     private void business(StringBuilder sql, RowContext row) {
         Map<String, String> v = row.values();
         String column = v.get("columnOriginal");
-        String analysisSql = v.get("ruleSql");
+        String analysisSql = qualifySql(v.get("ruleSql"), row.context());
+        String countSql = qualifySql(v.get("countSql"), row.context());
         String errorCountSql = analysisSql == null || analysisSql.isBlank() ? null
                 : "SELECT COUNT(1) FROM (\n" + analysisSql + "\n) ERR_CNT";
         insert(sql, "WAA_STND_TBL_PRF", List.of(
@@ -309,10 +317,10 @@ public class DatasetSqlExporter {
                 "STND_TGT_TBL_PNM", "STND_TGT_TBL_LNM", "STND_TGT_COL_PNM", "STND_TGT_COL_LNM", "COL_SNO",
                 "PRF_TYP", "BR_NM", "CNT_SQL", "ERR_CNT_SQL", "ANA_SQL", "DQI_ID", "OBJ_DESCN", "BASIS_RGLTN", "OPEN_YM"),
                 List.of(q(v, "wdqId"), q(row.context().systemName()), q(row.context().dbmsName()),
-                        q(row.context().dbmsName()), physical(v, "schemaOriginal", row.context().schema()),
-                        physical(v, "schemaOriginal", row.context().schema()), q(v, "tableOriginal"), q(v, "tableOriginal"),
+                        q(row.context().dbmsName()), q(row.context().schema()),
+                        q(row.context().schema()), q(v, "tableOriginal"), q(v, "tableOriginal"),
                         optional(column), optional(column), NULL, NULL, NULL, NULL, "1", q("BR"), q(v, "ruleName"),
-                        optional(v.get("countSql")), optional(errorCountSql), optional(analysisSql),
+                        optional(countSql), optional(errorCountSql), optional(analysisSql),
                         qualityIndicatorId(v.get("qualityIndicator")),
                         optional(v.get("description")), optional(v.get("basis")), q(row.context().openYm())));
     }
@@ -337,8 +345,18 @@ public class DatasetSqlExporter {
                 .filter(row -> row.dataType().equals("CODE_VALUE"))
                 .map(row -> normalize(row.values().get("ruleName")))
                 .filter(name -> !name.isBlank()).collect(java.util.stream.Collectors.toUnmodifiableSet());
+        Set<String> sourceSchemas=snapshot.rows().stream()
+                .map(NormalizedRow::values)
+                .flatMap(values -> java.util.stream.Stream.of(values.get("schemaOriginal"),
+                        values.get("schemaNormalized")))
+                .filter(value -> value != null && !value.isBlank())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
         return new ExportContext(systemName, dbmsName, snapshot.defaultSchema(), connectionId,
-                snapshot.deploymentYearMonth(), Map.copyOf(ruleIds), rulesWithCodeValues);
+                snapshot.deploymentYearMonth(), Map.copyOf(ruleIds), rulesWithCodeValues, sourceSchemas);
+    }
+
+    private String qualifySql(String sql, ExportContext context) {
+        return SqlSchemaQualifier.qualify(sql, context.schema(), context.sourceSchemas());
     }
 
     private String predominantValue(ProjectSnapshot snapshot, String key) {
@@ -503,6 +521,25 @@ public class DatasetSqlExporter {
                 .sorted(Comparator.comparing(NormalizedRow::logicalKey)).toList();
     }
 
+    private Set<String> excludedColumnKeys(ProjectSnapshot snapshot) {
+        return rows(snapshot, "EXCLUSION").stream()
+                .filter(row -> "COL".equalsIgnoreCase(row.values().get("exclusionType")))
+                .filter(row -> !"N".equalsIgnoreCase(row.values().getOrDefault("expYn", "Y")))
+                .map(row -> columnIdentity(snapshot, row))
+                .filter(key -> !key.isBlank())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    private String columnIdentity(ProjectSnapshot snapshot, NormalizedRow row) {
+        Map<String, String> values = row.values();
+        String schema = first(values.get("schemaOriginal"), values.get("schemaNormalized"), snapshot.defaultSchema());
+        String table = first(values.get("tableOriginal"), values.get("tableNormalized"));
+        String column = first(values.get("columnOriginal"), values.get("columnNormalized"));
+        if (schema.isBlank() || table.isBlank() || column.isBlank()) return "";
+        // WDQ physical identifiers are case-sensitive in criteria comparison.
+        return schema.trim() + '\u001f' + table.trim() + '\u001f' + column.trim();
+    }
+
     private String q(Map<String, String> values, String key) {
         String value = values.get(key);
         if (value == null || value.isBlank()) throw new IllegalStateException("필수 SQL 값이 없습니다: " + key);
@@ -556,6 +593,7 @@ public class DatasetSqlExporter {
     }
 
     private record ExportContext(String systemName, String dbmsName, String schema, String connectionId,
-            String openYm, Map<String, String> ruleIds, Set<String> rulesWithCodeValues) {}
+            String openYm, Map<String, String> ruleIds, Set<String> rulesWithCodeValues,
+            Set<String> sourceSchemas) {}
     private record RowContext(Map<String, String> values, ExportContext context) {}
 }

@@ -232,6 +232,10 @@ async function openProjectEditor(id) {
     const values = { systemCode: overview.systemCode, systemName: overview.systemName, dbmsType: project.dbmsType,
       dbmsPhysicalName: project.dbmsPhysicalName, defaultSchema: project.defaultSchema,
       targetYear: overview.targetYear, deploymentYearMonth: overview.deploymentYearMonth };
+    const schemas = [...new Set((project.rows || []).map(row => row.values?.schemaOriginal).filter(Boolean))];
+    $('#project-detected-schemas').textContent = schemas.length
+      ? `업로드 자료 감지 스키마: ${schemas.join(', ')} · 생성 SQL에는 입력한 적용 스키마를 사용합니다.`
+      : '감지된 스키마가 없습니다. 생성 SQL과 진단기준에 입력한 스키마를 사용합니다.';
     for (const [key, value] of Object.entries(values)) form.querySelector(`[name="${key}"]`).value = value || '';
     $('#project-edit-dialog').showModal();
   } catch (error) { toast(error.message, true); }

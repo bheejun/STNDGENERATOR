@@ -57,9 +57,11 @@ public class ProjectCreationService {
         Integer revision=jdbc.queryForObject("select coalesce(max(project_revision),0)+1 from build_project where system_id=?",Integer.class,systemId);
         jdbc.update("update build_project set active=false,updated_at=now() where system_id=? and target_year=? and active",systemId,targetYear);
         long projectId=jdbc.queryForObject("""
-                insert into build_project(system_id,target_year,deployment_year_month,status,project_revision)
-                values(?,?,?,'DRAFT',?) returning id
-                """,Long.class,systemId,targetYear,deploymentYearMonth,revision==null?1:revision);
+                insert into build_project(system_id,target_year,deployment_year_month,status,project_revision,
+                  applied_schema_original,applied_schema_normalized)
+                select ?,?,?, 'DRAFT',?,default_schema_original,default_schema_normalized
+                  from standard_system where id=? returning id
+                """,Long.class,systemId,targetYear,deploymentYearMonth,revision==null?1:revision,systemId);
         ids.allocate(WdqIdType.DB_CONNECTION, systemId, Long.toString(systemId), projectId);
         return new CreatedProject(projectId,systemId,ProjectStatus.DRAFT,system.systemCode(),revision==null?1:revision);
     }
@@ -92,9 +94,11 @@ public class ProjectCreationService {
 
     private CreatedProject insertProject(long systemId, String systemCode, CreateProject command, int revision) {
         long projectId = jdbc.queryForObject("""
-                insert into build_project(system_id,target_year,deployment_year_month,status,project_revision)
-                values(?,?,?,'DRAFT',?) returning id
-                """, Long.class, systemId, command.targetYear(), command.deploymentYearMonth(), revision);
+                insert into build_project(system_id,target_year,deployment_year_month,status,project_revision,
+                  applied_schema_original,applied_schema_normalized)
+                values(?,?,?,'DRAFT',?,?,?) returning id
+                """, Long.class, systemId, command.targetYear(), command.deploymentYearMonth(), revision,
+                command.defaultSchema().trim(), command.defaultSchema().trim().toUpperCase());
         ids.allocate(WdqIdType.DB_CONNECTION, systemId, Long.toString(systemId), projectId);
         return new CreatedProject(projectId, systemId, ProjectStatus.DRAFT, systemCode, revision);
     }
@@ -135,10 +139,9 @@ public class ProjectCreationService {
         try {
             jdbc.update("""
                     update standard_system set system_code=?,system_name=?,dbms_type=?,dbms_physical_name=?,
-                      default_schema_original=?,default_schema_normalized=?,updated_at=now() where id=?
+                      updated_at=now() where id=?
                     """, command.systemCode().trim(), command.systemName().trim(), DbmsTypeCodes.normalize(command.dbmsType()),
-                    command.dbmsPhysicalName().trim(), command.defaultSchema().trim(),
-                    command.defaultSchema().trim().toUpperCase(), before.systemId());
+                    command.dbmsPhysicalName().trim(), before.systemId());
             jdbc.update("""
                     update build_project set status=case when status in ('APPROVED','GENERATED','VALIDATED')
                       then 'NEEDS_REVIEW' else status end,approved_by=null,approved_at=null,
@@ -146,9 +149,11 @@ public class ProjectCreationService {
                     """, before.systemId());
             jdbc.update("""
                     update build_project set target_year=?,deployment_year_month=?,
+                      applied_schema_original=?,applied_schema_normalized=?,
                       status=case when status in ('APPROVED','GENERATED','VALIDATED') then 'NEEDS_REVIEW' else status end,
                       approved_by=null,approved_at=null,approved_snapshot_hash=null,updated_at=now() where id=?
-                    """, command.targetYear(), command.deploymentYearMonth(), projectId);
+                    """, command.targetYear(), command.deploymentYearMonth(), command.defaultSchema().trim(),
+                    command.defaultSchema().trim().toUpperCase(), projectId);
         } catch (DuplicateKeyException e) {
             throw new IllegalArgumentException("이미 사용 중인 시스템 코드 또는 대상연도입니다", e);
         }
@@ -162,7 +167,7 @@ public class ProjectCreationService {
     private ProjectDetails details(long projectId) {
         ProjectDetails value = jdbc.query("""
                 select p.system_id,s.system_code,s.system_name,s.dbms_type,s.dbms_physical_name,
-                  s.default_schema_original,p.target_year,p.deployment_year_month
+                  coalesce(p.applied_schema_original,s.default_schema_original),p.target_year,p.deployment_year_month
                 from build_project p join standard_system s on s.id=p.system_id where p.id=?
                 """, rs -> rs.next() ? new ProjectDetails(rs.getLong(1), rs.getString(2), rs.getString(3),
                         rs.getString(4), rs.getString(5), rs.getString(6), rs.getInt(7), rs.getString(8)) : null,

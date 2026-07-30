@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 import kr.wise.csr.normalization.NormalizedRow;
@@ -14,6 +15,16 @@ import kr.wise.csr.project.ProjectSnapshot;
 import kr.wise.csr.project.ProjectStatus;
 
 class DatasetSqlExporterTest {
+    @Test void qualifiesUnqualifiedAndDetectedSchemaTableReferences() {
+        String sql = "select * from OLD.TB a join CODE_REF b on a.id=b.id";
+        assertThat(SqlSchemaQualifier.qualify(sql, "NEW", Set.of("OLD")))
+                .isEqualTo("select * from NEW.TB a join NEW.CODE_REF b on a.id=b.id");
+        assertThat(SqlSchemaQualifier.qualify("select 1 from dual", "NEW", Set.of("OLD")))
+                .isEqualTo("select 1 from dual");
+        assertThat(SqlSchemaQualifier.qualify("select 'from OLD.TB' v from TB -- from OTHER\n", "NEW", Set.of("OLD")))
+                .isEqualTo("select 'from OLD.TB' v from NEW.TB -- from OTHER\n");
+    }
+
     @Test void escapesMariaDbLiteralsAndRejectsControlCharacters() {
         assertThat(MariaDbLiteral.of(null)).isEqualTo("NULL");
         assertThat(MariaDbLiteral.of("O'Reilly\\path\r\n한글")).isEqualTo("'O''Reilly\\\\path\\r\\n한글'");
@@ -42,6 +53,7 @@ class DatasetSqlExporterTest {
         assertThat(text(files, "05-code-list.sql")).contains("INSERT INTO dqlite.WAA_CD_LIST")
                 .contains("'A'", "'코드A'", "'STNDCD_00000001'", "'LC'", "'Y'");
         assertThat(text(files, "04-code-rule.sql")).contains("'LC', NULL, 'Y'");
+        assertThat(text(files, "04-code-rule.sql")).contains("select code from APP.codes");
         assertThat(text(files, "06-column-mapping.sql"))
                 .contains("WHERE STND_RULE_SET_ID LIKE 'STND_0%'")
                 .contains("'COL', 'COL', 'VRFC', 'STNDRULE_0000001'")
@@ -49,6 +61,7 @@ class DatasetSqlExporterTest {
                 .doesNotContain("WHERE (STND_SCH_PNM, STND_TBL_PNM, STND_COL_PNM) IN");
         assertThat(text(files, "07-business-rule.sql"))
                 .contains("'OBJ_00000103013'")
+                .contains("select count(*) from APP.TB")
                 .doesNotContain("SELECT DQI_ID FROM dqlite.WAM_DQI")
                 .contains("'업무 설명', '내부 지침'");
         String exclusion = text(files, "02-exclusion.sql");
@@ -63,6 +76,28 @@ class DatasetSqlExporterTest {
                 .doesNotContain("WHERE STND_EXP_OBJ_ID IN");
         assertThat(exclusion.indexOf("DELETE E FROM dqlite.WAA_EXP_TBL E"))
                 .isLessThan(exclusion.indexOf("WHERE STND_EXP_OBJ_ID LIKE"));
+    }
+
+    @Test void excludedColumnWinsOverVerificationMapping() {
+        ProjectSnapshot original = approvedSnapshot();
+        List<NormalizedRow> rows = new java.util.ArrayList<>(original.rows());
+        rows.add(row("EXCLUSION", "EC", Map.of(
+                "wdqId", "STNDEXP_0000003", "schemaOriginal", "APP",
+                "tableOriginal", "TB", "columnOriginal", "COL",
+                "exclusionType", "COL", "expYn", "Y", "reason", "민감정보")));
+        ProjectSnapshot snapshot = new ProjectSnapshot(
+                original.projectId(), original.systemId(), original.targetYear(),
+                original.deploymentYearMonth(), original.defaultSchema(), original.systemName(),
+                original.dbmsPhysicalName(), original.dbmsType(), original.connectionWdqId(),
+                original.connectionTarget(), original.status(), rows, original.conflicts(),
+                original.excludedPt01Count(), original.excludedPt02Count(), original.importErrors(),
+                original.approvedBy(), original.approvedAt(), original.approvedSnapshotHash());
+
+        String mapping = text(new DatasetSqlExporter().exportDatasetSql(snapshot), "06-column-mapping.sql");
+
+        assertThat(mapping)
+                .doesNotContain("'COL', 'COL', 'VRFC', 'STNDRULE_0000001'")
+                .contains("'CODE_COL', 'CODE_COL', 'CD', 'STNDCD_00000001', 'LRG009'");
     }
 
     static ProjectSnapshot approvedSnapshot() {
