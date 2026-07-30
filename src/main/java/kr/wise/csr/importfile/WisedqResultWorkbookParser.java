@@ -15,6 +15,7 @@ import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import kr.wise.csr.catalog.DefaultQualityIndicatorCatalog;
 @Component
 public class WisedqResultWorkbookParser implements WorkbookParser {
     private static final String EXECUTION_SHEET = "(진단실행)진단항목실행정보";
@@ -120,7 +121,7 @@ public class WisedqResultWorkbookParser implements WorkbookParser {
     }
     private ImportCandidate verification(CellReader.SourceRow r, String outputRuleName) {
         Map<String,String> v=map("ruleName",outputRuleName,"sourceRuleName",r.get("검증룰명"),"expression",r.get("검증룰"),
-                "qualityIndicator",r.get("품질지표명"),
+                "qualityIndicator",DefaultQualityIndicatorCatalog.canonicalName(r.get("품질지표명")),
                 "ruleType","",
                 "excludedValues",r.get("오류제외데이터"),
                 "excludedValueSeparator",r.first("오류제외데이터구분자", "오류제외데이터 구분자"),
@@ -197,7 +198,7 @@ public class WisedqResultWorkbookParser implements WorkbookParser {
             v.putAll(physical(execution));
         }
         v.put("sourceRuleId",r.get("업무규칙ID"));
-        v.put("qualityIndicator",r.get("품질지표명"));
+        v.put("qualityIndicator",DefaultQualityIndicatorCatalog.canonicalName(r.get("품질지표명")));
         v.put("basis",r.get("근거규정"));
         v.put("description",r.get("설명"));
         v.put("countSql",r.first("대상전체건수SQL","건수SQL","CNT_SQL"));

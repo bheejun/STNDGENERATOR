@@ -18,6 +18,7 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.stereotype.Component;
 
+import kr.wise.csr.catalog.DefaultQualityIndicatorCatalog;
 @Component
 public class SplitCriteriaWorkbookParser implements WorkbookParser {
     private final DefaultVerificationRuleCatalog defaultRules;
@@ -83,7 +84,7 @@ public class SplitCriteriaWorkbookParser implements WorkbookParser {
                     "ruleType", row.get("검증유형"),
                     "matchType", row.get("매칭유형"),
                     "expression", row.get("검증룰"),
-                    "qualityIndicator", row.get("품질지표명"),
+                    "qualityIndicator", DefaultQualityIndicatorCatalog.canonicalName(row.get("품질지표명")),
                     "excludedValues", row.get("오류제외데이터"),
                     "excludedValueSeparator", row.get("오류제외데이터구분자"),
                     "description", row.get("검증룰설명"));
@@ -131,7 +132,7 @@ public class SplitCriteriaWorkbookParser implements WorkbookParser {
             values.put("columnNormalized", norm(targetColumn));
             values.put("ruleName", row.get("업무규칙명"));
             values.put("ruleKind", "BUSINESS");
-            values.put("qualityIndicator", row.get("품질지표명"));
+            values.put("qualityIndicator", DefaultQualityIndicatorCatalog.canonicalName(row.get("품질지표명")));
             values.put("basis", row.get("근거규정"));
             values.put("description", row.get("설명"));
             values.put("countSql", row.get("건수SQL"));

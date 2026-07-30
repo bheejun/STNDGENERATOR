@@ -11,6 +11,8 @@ class DefaultQualityIndicatorCatalogTest {
                 .contains("OBJ_00000084172");
         assertThat(DefaultQualityIndicatorCatalog.builtInId("구분 도메인"))
                 .contains("OBJ_00000084177");
+        assertThat(DefaultQualityIndicatorCatalog.canonicalName("구분 도메인"))
+                .isEqualTo("번호 도메인");
         assertThat(DefaultQualityIndicatorCatalog.builtInId("업무규칙"))
                 .contains("OBJ_00000103013");
     }

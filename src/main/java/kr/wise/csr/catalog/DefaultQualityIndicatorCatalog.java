@@ -19,7 +19,6 @@ public class DefaultQualityIndicatorCatalog {
             Map.entry("여부 도메인", "OBJ_00000084171"),
             Map.entry("율 도메인", "OBJ_00000084174"),
             Map.entry("번호 도메인", "OBJ_00000084177"),
-            Map.entry("구분 도메인", "OBJ_00000084177"),
             Map.entry("정합성진단", "OBJ_00000180004"),
             Map.entry("완결성진단", "OBJ_00000180005"),
             Map.entry("시간순서 일관성", "OBJ_00000084179"),
@@ -32,6 +31,8 @@ public class DefaultQualityIndicatorCatalog {
             Map.entry("필수값", "OBJ_00000180010"),
             Map.entry("중복데이터", "OBJ_00000180011"),
             Map.entry("업무규칙", "OBJ_00000103013"));
+    private static final Map<String, String> INPUT_ALIASES = Map.of(
+            "구분 도메인", "번호 도메인");
 
     private final JdbcTemplate jdbc;
     private volatile Map<String, String> ids;
@@ -42,16 +43,22 @@ public class DefaultQualityIndicatorCatalog {
 
     public Optional<String> findId(String name) {
         if (name == null || name.isBlank()) return Optional.empty();
-        return Optional.ofNullable(load().get(name.trim()));
+        return Optional.ofNullable(load().get(canonicalName(name)));
     }
 
     public static Optional<String> builtInId(String name) {
         if (name == null || name.isBlank()) return Optional.empty();
-        return Optional.ofNullable(BUILT_IN_IDS.get(name.trim()));
+        return Optional.ofNullable(BUILT_IN_IDS.get(canonicalName(name)));
     }
 
     public static boolean isBuiltIn(String name) {
         return builtInId(name).isPresent();
+    }
+
+    public static String canonicalName(String name) {
+        if (name == null) return "";
+        String trimmed = name.trim();
+        return INPUT_ALIASES.getOrDefault(trimmed, trimmed);
     }
 
     private Map<String, String> load() {
